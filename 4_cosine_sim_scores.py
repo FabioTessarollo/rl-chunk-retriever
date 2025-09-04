@@ -3,7 +3,7 @@ import json
 import os
 import numpy as np
 import torch
-from exp_setup import Data
+from Data import Data
 from sklearn.metrics.pairwise import cosine_similarity
 
 def get_cosine_sim(v1, v2):
