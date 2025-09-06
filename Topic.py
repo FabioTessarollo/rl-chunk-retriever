@@ -28,7 +28,7 @@ class Topic:
         self.ranked_chunks = ranked_chunks
         self.relevant_chunks = relevant_chunks
         self.bag_of_chunks = []
-        self.actions_taken = {'nr': 0, 'pr': 0, 'fw': 0, 'bw': 0, 'ad': 0, 'su': 0}
+        self.actions_taken = {'sk': 0, 'pr': 0, 'fw': 0, 'bw': 0, 'ad': 0, 'su': 0}
         self.last_action = None
         self.done = False
         self.max_chunk_id = max(page_chunks_dict.keys())
@@ -84,32 +84,38 @@ class Topic:
         state_embedding = torch.concat((self.chunk_emb, self.query_emb, self.bag_of_chunks_embedding), dim = 0)
         state_metadata = self.get_state_metadata()
         return (state_embedding, state_metadata, 0, self.done)
+    
+    def get_state_embedding(self):
 
-    def get_next_chunk_in_rank(self):
-        self.exp_steps+=1
+        single_chunk_emb = self.page_chunks_dict.get(self.current_chunk_id)
+
+        if self.current_chunk_id % 2 == 0 or self.current_chunk_id == 0:
+            ext_chunk_emb = self.page_even_chunks_dict.get(self.current_chunk_id)
+        else:
+            ext_chunk_emb = self.page_odd_chunks_dict.get(self.current_chunk_id)
+
+        state_embedding = torch.concat((single_chunk_emb, ext_chunk_emb, self.query_emb, self.bag_of_chunks_embedding), dim = 0)
+
+        return state_embedding
+
+    def skip(self):
+
+        reward = -0.01
         
         self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
-        
-        # if the skipped chunk was relevant and not already taken, penalty
-        if self.current_chunk_id in self.relevant_chunks and self.current_chunk_id not in self.bag_of_chunks:
-            reward = -0.1
-        else:
-            reward = 0
 
         if self.current_rank_chunk == len(self.ranked_chunks) - 1:
             self.current_chunk_id = self.ranked_chunks[0]
         else:
             self.current_rank_chunk += 1
             self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
-        
-        self.chunk_emb = self.page_chunks_dict.get(self.current_chunk_id)
 
-        state_embedding = torch.concat((self.chunk_emb, self.query_emb, self.bag_of_chunks_embedding), dim = 0)
-
-        self.last_action = 'nr'
-        self.actions_taken['nr'] += 1
+        state_embedding = self.get_state_embedding()
 
         state_metadata = self.get_state_metadata()
+
+        self.last_action = 'sk'
+        self.actions_taken['sk'] += 1
 
         return (state_embedding, state_metadata, reward, self.done)
     
