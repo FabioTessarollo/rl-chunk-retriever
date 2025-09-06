@@ -70,5 +70,36 @@ class Data:
                 difficult_query_ids.append(q)
         print(f"Count of fair queries: {len(fair_query_ids)}")
         return fair_query_ids, difficult_query_ids
+    
+    def split_query_ids(self, query_ids, first_split_ratio):
+        first_set = []
+        second_set = []
+        pages = {}
 
+        # map page_id -> list of query_ids
+        for q in query_ids:
+            query = self.get_query_obj_from_id(q)
+            page_id = query.get("page_id")
+            if page_id not in pages:
+                pages[page_id] = []
+            pages[page_id].append(q)
+
+        # determine number of pages for the first split
+        page_ids = list(pages.keys())
+        split_index = int(len(page_ids) * first_split_ratio)
+
+        first_page_ids = set(page_ids[:split_index])
+        second_page_ids = set(page_ids[split_index:])
+
+        # assign query_ids according to page split
+        for pid in first_page_ids:
+            first_set.extend(pages[pid])
+        for pid in second_page_ids:
+            second_set.extend(pages[pid])
+
+        return first_set, second_set
+
+        
+
+        
 

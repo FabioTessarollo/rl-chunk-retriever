@@ -9,6 +9,75 @@ from Topic import Topic
 from DuelingDQN import DuelingDQN
 from ReplayBuffer import PrioritizedReplayBuffer
 
+random.seed(1)
+torch.manual_seed(1)
+
+def evaluate_on_validation(data, validation_set, online_net, device, max_exploration_steps, max_steps_per_episode):
+    """Evaluate the model on validation set without training"""
+    val_reward = 0
+    val_f1_score = 0
+
+    logging.info(f"      VALIDATION")
+    
+    for query_id in validation_set:
+        query = data.get_query_obj_from_id(query_id)
+        page_id = query.get("page_id")
+        page, page_even, page_odd = data.get_page_chunks_dict(page_id)
+        query_emb = torch.tensor(query.get("query")).to(device)
+        relevant_chunks = query.get("relevant_chunks")
+        ranked_chunks = data.cosine_sim_rank[str(query_id)]
+        query_desc = query.get("query_desc")
+
+        topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exploration_steps)
+
+        state_emb, state_meta, _, _ = topic.get_initial_step()
+        state_emb = state_emb.to(device)
+        state_meta = state_meta.to(device)
+        episode_reward = 0
+        done = False
+        episode_steps = 0
+        
+        # Greedy evaluation (no exploration)
+        while not done and episode_steps < max_steps_per_episode:
+            episode_steps += 1
+            
+            with torch.no_grad():
+                q = online_net(state_emb.unsqueeze(0), state_meta.unsqueeze(0))
+                action = q.argmax().item()
+            
+            if topic.exp_steps > max_exploration_steps:
+                next_emb, next_meta, reward, done = topic.submit_current_bag()
+            elif action == 0:
+                next_emb, next_meta, reward, done = topic.get_next_chunk_in_rank()
+            elif action == 1:
+                next_emb, next_meta, reward, done = topic.get_prev_chunk_in_rank()
+            elif action == 2:
+                next_emb, next_meta, reward, done = topic.get_fw_extended_chunk()
+            elif action == 3:
+                next_emb, next_meta, reward, done = topic.get_bw_extended_chunk()
+            elif action == 4:
+                next_emb, next_meta, reward, done = topic.add_chunk_to_bag()
+            elif action == 5:
+                next_emb, next_meta, reward, done = topic.submit_current_bag()
+                
+            next_emb = next_emb.to(device)
+            next_meta = next_meta.to(device)
+            episode_reward += reward
+            
+            state_emb, state_meta = next_emb, next_meta
+
+            logging.info(f"Step: {episode_steps}, Reward: {reward:.4f}, Action: {topic.last_action}")
+            
+        val_reward += episode_reward
+        val_f1_score += topic.f1_score
+
+        logging.info(f"Validation - Query: {query_desc}, Episode Reward: {episode_reward:.4f}, Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Relevant: {topic.relevant_chunks}, Top_10_Rank: {topic.ranked_chunks[:10]}, Actions: {topic.actions_taken}")
+    
+    avg_val_reward = val_reward / len(validation_set)
+    avg_val_f1_score = val_f1_score / len(validation_set)
+    
+    return avg_val_reward, avg_val_f1_score
+
 def main():
     pages_path = "data_chunks_emb/pages_chunked_emb.json"
     pages_doub_even_path = "data_chunks_emb/pages_doub_chunked_even.json"
@@ -25,6 +94,8 @@ def main():
 
     fair_query_ids, difficult_query_ids = data.get_query_ids_by_difficulty()
 
+    training_set, validation_set = data.split_query_ids(fair_query_ids, 0.7)
+
     embedding_dim = 2304
     metadata_dim = 8
 
@@ -32,15 +103,23 @@ def main():
     gamma = 0.99
     epsilon = 1.0
     epsilon_min = 0.01
-    epsilon_decay = 0.99995
-    batch_size = 32 #64
+    epsilon_decay = 0.9997
+    batch_size = 64 #32 #64
     replay_capacity = 10000
-    lr = 0.0005 # add scheduler
+    lr = 0.0005 # initial lr
     target_update = 100 #100
-    epochs = 50
+    epochs = 40
     max_steps_per_episode = 100 #100
     max_exploration_steps = 60
     action_dim = 6
+
+    # Scheduler hyperparameters
+    scheduler_type = "cosine"  # Options: "step", "cosine", "exponential", "plateau"
+    step_size = 10  # For StepLR
+    gamma_scheduler = 0.9  # For StepLR and ExponentialLR
+    eta_min = 1e-6  # For CosineAnnealingLR
+    patience = 5  # For ReduceLROnPlateau
+    factor = 0.5  # For ReduceLROnPlateau
 
     # PER hyperparameters
     per_alpha = 0.6      # Prioritization exponent
@@ -55,6 +134,21 @@ def main():
     target_net = DuelingDQN(embedding_dim, metadata_dim, action_dim=action_dim).to(device)
     target_net.load_state_dict(online_net.state_dict())
     optimizer = optim.Adam(online_net.parameters(), lr=lr)
+
+        # Initialize scheduler
+    if scheduler_type == "step":
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma_scheduler)
+    elif scheduler_type == "cosine":
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=eta_min)
+    elif scheduler_type == "exponential":
+        scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma_scheduler)
+    elif scheduler_type == "plateau":
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=factor, 
+                                                       patience=patience, verbose=True)
+    else:
+        scheduler = None
+        print(f"Warning: Unknown scheduler type '{scheduler_type}'. No scheduler will be used.")
+    
     
     replay = PrioritizedReplayBuffer(
         capacity=replay_capacity, 
@@ -67,11 +161,18 @@ def main():
 
     step_count = 0
     for epoch in range(epochs):
+        online_net.train()
         epoch_reward = 0
         epoch_f1_score = 0
-        random.shuffle(fair_query_ids)
+        random.shuffle(training_set)
+
+        # Log current learning rate
+        current_lr = optimizer.param_groups[0]['lr']
+        print(f"Current Learning Rate: {current_lr:.6f}")
+        logging.info(f"Epoch {epoch} - Learning Rate: {current_lr:.6f}")
+
         print(f"Epoch: {epoch}")
-        for query_id in fair_query_ids:
+        for query_id in training_set:
             query = data.get_query_obj_from_id(query_id)
             page_id = query.get("page_id")
             page, page_even, page_odd = data.get_page_chunks_dict(page_id)
@@ -179,8 +280,30 @@ def main():
                 
         avg_epoch_reward = epoch_reward / len(fair_query_ids)
         avg_epoch_f1_score = epoch_f1_score / len(fair_query_ids)
+
+        # Step the scheduler
+        if scheduler is not None:
+            if scheduler_type == "plateau":
+                # For ReduceLROnPlateau, we need to pass a metric (using F1 score here)
+                scheduler.step(avg_epoch_f1_score)
+            else:
+                # For other schedulers, just step without arguments
+                scheduler.step()
+
         logging.info(f"Epoch: {epoch}, Average Reward: {avg_epoch_reward:.4f}, Average F1: {avg_epoch_f1_score:.4f}, Epsilon: {epsilon:.4f}")
         print(f"Average Reward: {avg_epoch_reward:.4f}, Average F1: {avg_epoch_f1_score:.4f}")
+
+        if epoch > epochs/2:
+            # Validation phase
+            online_net.eval()
+            avg_val_reward, avg_val_f1_score = evaluate_on_validation(
+                data, validation_set, online_net, device, 
+                max_exploration_steps, max_steps_per_episode
+            )
+        
+            # Validation test after training
+            logging.info(f"Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}, Epsilon: {epsilon:.4f}")
+            print(f"Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
 
 if __name__ == "__main__":
     main()
