@@ -16,8 +16,6 @@ def evaluate_on_validation(data, validation_set, online_net, device, max_explora
     """Evaluate the model on validation set without training"""
     val_reward = 0
     val_f1_score = 0
-
-    logging.info(f"      VALIDATION")
     
     for query_id in validation_set:
         query = data.get_query_obj_from_id(query_id)
