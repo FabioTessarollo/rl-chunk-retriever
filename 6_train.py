@@ -12,7 +12,7 @@ from ReplayBuffer import PrioritizedReplayBuffer
 random.seed(1)
 torch.manual_seed(1)
 
-def evaluate_on_validation(data, validation_set, online_net, device, max_exploration_steps, max_steps_per_episode):
+def evaluate_on_validation(data, validation_set, online_net, device, max_exp_loops, max_steps_per_episode):
     """Evaluate the model on validation set without training"""
     val_reward = 0
     val_f1_score = 0
@@ -26,7 +26,7 @@ def evaluate_on_validation(data, validation_set, online_net, device, max_explora
         ranked_chunks = data.cosine_sim_rank[str(query_id)]
         query_desc = query.get("query_desc")
 
-        topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exploration_steps)
+        topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exp_loops)
 
         state_emb, state_meta, _, _ = topic.get_initial_step()
         state_emb = state_emb.to(device)
@@ -43,20 +43,16 @@ def evaluate_on_validation(data, validation_set, online_net, device, max_explora
                 q = online_net(state_emb.unsqueeze(0), state_meta.unsqueeze(0))
                 action = q.argmax().item()
             
-            if topic.exp_steps > max_exploration_steps:
-                next_emb, next_meta, reward, done = topic.submit_current_bag()
-            elif action == 0:
-                next_emb, next_meta, reward, done = topic.get_next_chunk_in_rank()
-            elif action == 1:
-                next_emb, next_meta, reward, done = topic.get_prev_chunk_in_rank()
-            elif action == 2:
-                next_emb, next_meta, reward, done = topic.get_fw_extended_chunk()
-            elif action == 3:
-                next_emb, next_meta, reward, done = topic.get_bw_extended_chunk()
-            elif action == 4:
-                next_emb, next_meta, reward, done = topic.add_chunk_to_bag()
-            elif action == 5:
-                next_emb, next_meta, reward, done = topic.submit_current_bag()
+                if topic.current_loop + 1 > max_exp_loops:
+                    next_emb, next_meta, reward, done = topic.submit_current_bag()
+                elif action == 0:
+                    next_emb, next_meta, reward, done = topic.skip()
+                elif action == 1:
+                    next_emb, next_meta, reward, done = topic.take_single()
+                elif action == 2:
+                    next_emb, next_meta, reward, done = topic.take_double()
+                elif action == 3:
+                    next_emb, next_meta, reward, done = topic.submit_current_bag()
                 
             next_emb = next_emb.to(device)
             next_meta = next_meta.to(device)
@@ -64,7 +60,7 @@ def evaluate_on_validation(data, validation_set, online_net, device, max_explora
             
             state_emb, state_meta = next_emb, next_meta
 
-            logging.info(f"Step: {episode_steps}, Reward: {reward:.4f}, Action: {topic.last_action}")
+            logging.info(f"Step: {episode_steps}, Reward: {reward:.4f}, Action: {action}")
             
         val_reward += episode_reward
         val_f1_score += topic.f1_score
@@ -94,22 +90,22 @@ def main():
 
     training_set, validation_set = data.split_query_ids(fair_query_ids, 0.7)
 
-    embedding_dim = 2304
+    proj_dim = 256
     metadata_dim = 8
 
     # Hyperparameters
     gamma = 0.99
     epsilon = 1.0
     epsilon_min = 0.01
-    epsilon_decay = 0.9997
+    epsilon_decay = 0.99993
     batch_size = 64 #32 #64
     replay_capacity = 10000
     lr = 0.0005 # initial lr
     target_update = 100 #100
     epochs = 40
     max_steps_per_episode = 100 #100
-    max_exploration_steps = 60
-    action_dim = 6
+    max_exp_loops = 3
+    action_dim = 4
 
     # Scheduler hyperparameters
     scheduler_type = "cosine"  # Options: "step", "cosine", "exponential", "plateau"
@@ -128,8 +124,8 @@ def main():
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    online_net = DuelingDQN(embedding_dim, metadata_dim, action_dim=action_dim).to(device)
-    target_net = DuelingDQN(embedding_dim, metadata_dim, action_dim=action_dim).to(device)
+    online_net = DuelingDQN(metadata_dim, action_dim, proj_dim).to(device)
+    target_net = DuelingDQN(metadata_dim, action_dim, proj_dim).to(device)
     target_net.load_state_dict(online_net.state_dict())
     optimizer = optim.Adam(online_net.parameters(), lr=lr)
 
@@ -179,7 +175,7 @@ def main():
             relevant_chunks = query.get("relevant_chunks")
             ranked_chunks = data.cosine_sim_rank[str(query_id)]
 
-            topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exploration_steps)
+            topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exp_loops)
 
             state_emb, state_meta, _, _ = topic.get_initial_step()
             state_emb = state_emb.to(device)
@@ -199,19 +195,15 @@ def main():
                         q = online_net(state_emb.unsqueeze(0), state_meta.unsqueeze(0))
                         action = q.argmax().item()
                 
-                if topic.exp_steps > max_exploration_steps:
+                if topic.current_loop + 1 > max_exp_loops:
                     next_emb, next_meta, reward, done = topic.submit_current_bag()
                 elif action == 0:
-                    next_emb, next_meta, reward, done = topic.get_next_chunk_in_rank()
+                    next_emb, next_meta, reward, done = topic.skip()
                 elif action == 1:
-                    next_emb, next_meta, reward, done = topic.get_prev_chunk_in_rank()
+                    next_emb, next_meta, reward, done = topic.take_single()
                 elif action == 2:
-                    next_emb, next_meta, reward, done = topic.get_fw_extended_chunk()
+                    next_emb, next_meta, reward, done = topic.take_double()
                 elif action == 3:
-                    next_emb, next_meta, reward, done = topic.get_bw_extended_chunk()
-                elif action == 4:
-                    next_emb, next_meta, reward, done = topic.add_chunk_to_bag()
-                elif action == 5:
                     next_emb, next_meta, reward, done = topic.submit_current_bag()
                     
                 next_emb = next_emb.to(device)
@@ -263,7 +255,7 @@ def main():
                     # Update priorities in replay buffer
                     replay.update_priorities(idxs, td_errors)
                     
-                    logging.info(f"Epoch: {epoch}, Query: {query_id}, Step: {episode_steps}, Loss: {loss.item():.4f}, Reward: {reward:.4f}, Rand: {int(rand)}, Action: {topic.last_action}")
+                    logging.info(f"Epoch: {epoch}, Query: {query_id}, Step: {episode_steps}, Loss: {loss.item():.4f}, Reward: {reward:.4f}, Rand: {int(rand)}, Action Code: {action}")
                 
                 if step_count % target_update == 0:
                     target_net.load_state_dict(online_net.state_dict())
@@ -296,7 +288,7 @@ def main():
             online_net.eval()
             avg_val_reward, avg_val_f1_score = evaluate_on_validation(
                 data, validation_set, online_net, device, 
-                max_exploration_steps, max_steps_per_episode
+                max_exp_loops, max_steps_per_episode
             )
         
             # Validation test after training

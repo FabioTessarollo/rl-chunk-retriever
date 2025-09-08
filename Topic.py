@@ -18,66 +18,43 @@ actions, and output of the deep Q-learning model (Q-values), to let it explore t
 
 class Topic:
 
-    def __init__(self, query_emb, page_chunks_dict, page_even_chunks_dict, page_odd_chunks_dict, ranked_chunks, relevant_chunks, max_exp_steps):
+    def __init__(self, query_emb, page_chunks_dict, page_even_chunks_dict, page_odd_chunks_dict, ranked_chunks, relevant_chunks, max_exp_loops):
         self.current_rank_chunk = 0 # rank position of the current chunk - to navigate the rank
         self.current_chunk_id = 0 # chunk id value of the current chunk - to navigate the page
         self.query_emb = query_emb
         self.page_chunks_dict = page_chunks_dict
-        self.page_even_chunks_dict = page_even_chunks_dict #extended embeddings
-        self.page_odd_chunks_dict = page_odd_chunks_dict #extended embeddings
+        self.page_even_chunks_dict = page_even_chunks_dict #double embeddings
+        self.page_odd_chunks_dict = page_odd_chunks_dict #double embeddings
         self.ranked_chunks = ranked_chunks
         self.relevant_chunks = relevant_chunks
         self.bag_of_chunks = []
-        self.actions_taken = {'sk': 0, 'pr': 0, 'fw': 0, 'bw': 0, 'ad': 0, 'su': 0}
-        self.last_action = None
+        self.actions_taken = {'sk': 0, 'ts': 0, 'td': 0, 'su': 0}
         self.done = False
         self.max_chunk_id = max(page_chunks_dict.keys())
         self.f1_score = 0
         self.device = torch.device("mps")
         self.bag_of_chunks_embedding = torch.zeros(len(query_emb), dtype=torch.float32, device = self.device)
-        self.exp_steps = 0
-        self.max_exp_steps = max_exp_steps
+        self.current_loop = 0
+        self.max_exp_loops = max_exp_loops
         self.single_chunk_emb = None
         self.double_chunk_emb = None
-    
-    def get_state_metadata(self): # add multiple scores
-        rank_position = self.current_rank_chunk  / len(self.ranked_chunks)
-        remaining_steps = (self.max_exp_steps - self.exp_steps) / self.max_exp_steps
-        #page_position = self.current_chunk_id / self.max_chunk_id
 
-        fw_action = 0
-        bw_action = 0
-        ext_chunk_already_in_bag = 0
-        if self.last_action == 'fw':
-            fw_action = 1
-            c1 = self.current_chunk_id
-            c2 = self.current_chunk_id + 1
-            if c1 in self.bag_of_chunks and c2 in self.bag_of_chunks:
-                ext_chunk_already_in_bag = 1
-            else:
-                ext_chunk_already_in_bag = 0
-        elif self.last_action == 'bw':
-            bw_action = 1
-            c1 = self.current_chunk_id
-            c2 = self.current_chunk_id - 1
-            if c1 in self.bag_of_chunks and c2 in self.bag_of_chunks:
-                ext_chunk_already_in_bag = 1              
-        
+    def cos_sim_norm(self, v1, v2):
+        sim = torch.nn.functional.cosine_similarity(v1.unsqueeze(0), v2.unsqueeze(0))
+        return (sim + 1) / 2
+    
+    def get_state_metadata(self):
+        #add similarity metrics?
+        rank_position = (self.current_rank_chunk + 1)  / len(self.ranked_chunks)
+        remaining_loops = (self.current_loop + 1) / self.max_exp_loops
         single_chunk_already_in_bag = int(self.current_chunk_id in self.bag_of_chunks)
-        
-        last_action_is_add = int(self.last_action == 'ad')
-
-        bag_size = len(self.bag_of_chunks)/10
-        state_metadata = torch.tensor([rank_position, fw_action, bw_action, last_action_is_add, single_chunk_already_in_bag, ext_chunk_already_in_bag, bag_size, remaining_steps], device = self.device)
+        next_chunk_already_in_bag = int(self.current_chunk_id + 1 in self.bag_of_chunks)
+        bag_size = len(self.bag_of_chunks) / len(self.ranked_chunks)
+        sq_sim = self.cos_sim_norm(self.single_chunk_emb, self.query_emb)
+        dq_sim = self.cos_sim_norm(self.double_chunk_emb, self.query_emb)
+        bq_sim = self.cos_sim_norm(self.bag_of_chunks_embedding, self.query_emb)
+        state_metadata = torch.tensor([rank_position, remaining_loops, single_chunk_already_in_bag, next_chunk_already_in_bag, bag_size, sq_sim, dq_sim, bq_sim], device = self.device)
         return state_metadata
-    
-    def discouraged_action(self, action_code, reward):
-        self.single_chunk_emb = self.page_chunks_dict.get(self.current_chunk_id)
-        state_embedding = torch.concat((self.single_chunk_emb, self.query_emb, self.bag_of_chunks_embedding), dim = 0)
-        self.last_action = action_code
-        self.actions_taken[action_code] += 1
-        state_metadata = self.get_state_metadata()
-        return (state_embedding, state_metadata, reward, self.done)
 
     def get_initial_step(self):
         self.current_chunk_id = self.ranked_chunks[0]
@@ -87,7 +64,12 @@ class Topic:
     
     def get_state_embedding(self):
 
+        # get current chunk id embedding
         self.single_chunk_emb = self.page_chunks_dict.get(self.current_chunk_id)
+
+        # case when current chunk is the last in the page -> no double chunk
+        if self.current_chunk_id == self.max_chunk_id:
+            self.current_chunk_id -= 1
 
         if self.current_chunk_id % 2 == 0 or self.current_chunk_id == 0:
             self.double_chunk_emb = self.page_even_chunks_dict.get(self.current_chunk_id)
@@ -105,8 +87,15 @@ class Topic:
         # point to the current chunk id over the rank
         self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
 
+        if self.current_chunk_id in self.relevant_chunks and self.current_chunk_id not in self.bag_of_chunks:
+            reward = -0.1
+        else:
+            reward = 0
+
         # restart if last in the rank, else go next
         if self.current_rank_chunk == len(self.ranked_chunks) - 1:
+            self.current_loop += 1
+            self.current_rank_chunk = 0
             self.current_chunk_id = self.ranked_chunks[0]
         else:
             self.current_rank_chunk += 1
@@ -120,7 +109,7 @@ class Topic:
 
         return (state_embedding, state_metadata, reward, self.done)
     
-    def get_single(self):
+    def take_single(self):
 
         self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
 
@@ -130,20 +119,22 @@ class Topic:
         else:
             self.bag_of_chunks_embedding = self.single_chunk_emb
 
-        # add to bag
-        if self.current_chunk_id not in self.bag_of_chunks:
-            self.bag_of_chunks.append(self.current_chunk_id)
-
         # compute reward
         if self.current_chunk_id in self.relevant_chunks and self.current_chunk_id not in self.bag_of_chunks:
             reward = 2
-        elif self.current_chunk_id in self.relevant_chunks and self.current_chunk_id in self.bag_of_chunks:
+        elif self.current_chunk_id in self.relevant_chunks:
             reward = 0
         else:
             reward = -1
+
+        # add to bag
+        if self.current_chunk_id not in self.bag_of_chunks:
+            self.bag_of_chunks.append(self.current_chunk_id)
         
         # go next
         if self.current_rank_chunk == len(self.ranked_chunks) - 1:
+            self.current_loop += 1
+            self.current_rank_chunk = 0
             self.current_chunk_id = self.ranked_chunks[0]
         else:
             self.current_rank_chunk += 1
@@ -153,14 +144,16 @@ class Topic:
         state_embedding = self.get_state_embedding()
         state_metadata = self.get_state_metadata()
 
-        self.last_action = 'gs'
-        self.actions_taken['gs'] += 1
+        self.actions_taken['ts'] += 1
 
         return (state_embedding, state_metadata, reward, self.done)
     
-    def get_double(self):
+    def take_double(self):
 
         self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
+
+        if self.current_chunk_id == self.max_chunk_id:
+            self.current_chunk_id -= 1
 
         c1 = self.current_chunk_id
         c2 = self.current_chunk_id + 1
@@ -172,22 +165,31 @@ class Topic:
             else:
                 self.bag_of_chunks_embedding = self.double_chunk_emb
 
+        # compute reward
+        both_relevant = c1 in self.relevant_chunks and c2 in self.relevant_chunks
+        both_not_in_bag = c1 not in self.bag_of_chunks and c2 not in self.bag_of_chunks
+        one_not_in_bag = c1 not in self.bag_of_chunks or c2 not in self.bag_of_chunks
+        one_wasnt_selected_by_cosine_sim = c1 not in self.ranked_chunks[:10] or c2 not in self.ranked_chunks[:10]
+        if both_relevant and both_not_in_bag and one_wasnt_selected_by_cosine_sim:
+            reward = 4
+        elif both_relevant and one_not_in_bag and one_wasnt_selected_by_cosine_sim:
+            reward = 2
+        elif both_relevant and one_not_in_bag:
+            reward = 1
+        elif both_relevant:
+            reward = 0
+        else:
+            reward = -1
+
         # add to bag
         if c1 not in self.bag_of_chunks:
             self.bag_of_chunks.append(c1)
         if c2 not in self.bag_of_chunks:
             self.bag_of_chunks.append(c2)
-
-        # compute reward
-        if self.current_chunk_id in self.relevant_chunks and self.current_chunk_id not in self.bag_of_chunks:
-            reward = 2
-        elif self.current_chunk_id in self.relevant_chunks and self.current_chunk_id in self.bag_of_chunks:
-            reward = 0
-        else:
-            reward = -1
         
-        # go next
+        # go next: restart if last -1 in the rank, else go next
         if self.current_rank_chunk >= len(self.ranked_chunks)-2:
+            self.current_loop += 1
             self.current_rank_chunk = 0
             self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
         else:
@@ -198,117 +200,7 @@ class Topic:
         state_embedding = self.get_state_embedding()
         state_metadata = self.get_state_metadata()
 
-        self.last_action = 'gd'
-        self.actions_taken['gd'] += 1
-
-        return (state_embedding, state_metadata, reward, self.done)
-
-    def add_chunk_to_bag(self):
-        self.exp_steps+=1
-
-        if self.last_action == 'ad':
-            return self.discouraged_action('ad', -1)
-        
-
-        # update bag mean embedding
-        if len(self.bag_of_chunks) > 0:
-            self.bag_of_chunks_embedding = (self.bag_of_chunks_embedding * len(self.bag_of_chunks) + self.single_chunk_emb) / (len(self.bag_of_chunks) + 1)
-        else:
-            self.bag_of_chunks_embedding = self.single_chunk_emb
-
-        # add to list of selected chunks
-        if self.last_action == 'fw':
-
-            c1 = self.current_chunk_id
-            c2 = self.current_chunk_id + 1
-
-            if c1 in self.relevant_chunks and c1 not in self.bag_of_chunks and c2 in self.relevant_chunks and c2 not in self.bag_of_chunks and c2 not in self.ranked_chunks:
-                reward = 5
-            elif c1 in self.relevant_chunks and c1 not in self.bag_of_chunks and c2 in self.relevant_chunks and c2 not in self.bag_of_chunks:
-                reward = 3
-            elif c1 in self.relevant_chunks and c2 in self.relevant_chunks:
-                reward = 0
-            elif c1 in self.relevant_chunks and c2 not in self.relevant_chunks:
-                reward = -1
-            else:
-                reward = -2
-            
-            if c1 not in self.bag_of_chunks:
-                self.bag_of_chunks.append(c1)
-            if c2 not in self.bag_of_chunks:
-                self.bag_of_chunks.append(c2)
-
-            # move to next
-            if self.current_rank_chunk + 2 >= len(self.ranked_chunks) - 1:
-                self.current_rank_chunk = 0
-                self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
-                self.single_chunk_emb = self.page_chunks_dict.get(self.current_chunk_id)
-            else:
-                self.exp_steps+=1
-                self.current_rank_chunk += 2
-                self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
-                self.single_chunk_emb = self.page_chunks_dict.get(self.current_chunk_id)
-        
-        elif self.last_action == 'bw':
-
-            c1 = self.current_chunk_id
-            c2 = self.current_chunk_id - 1
-
-            if c1 in self.relevant_chunks and c1 not in self.bag_of_chunks and c2 in self.relevant_chunks and c2 not in self.bag_of_chunks and c2 not in self.ranked_chunks:
-                reward = 5
-            elif c1 in self.relevant_chunks and c1 not in self.bag_of_chunks and c2 in self.relevant_chunks and c2 not in self.bag_of_chunks:
-                reward = 3
-            elif c1 in self.relevant_chunks and c2 in self.relevant_chunks:
-                reward = 0
-            elif c1 in self.relevant_chunks and c2 not in self.relevant_chunks:
-                reward = -1
-            else:
-                reward = -2
-            
-            if c1 not in self.bag_of_chunks:
-                self.bag_of_chunks.append(c1)
-            if c2 not in self.bag_of_chunks:
-                self.bag_of_chunks.append(c2)
-            
-            # move to next
-            if self.current_rank_chunk == len(self.ranked_chunks) - 1:
-                self.current_rank_chunk = 0
-                self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
-                self.single_chunk_emb = self.page_chunks_dict.get(self.current_chunk_id)
-            else:
-                self.current_rank_chunk += 1
-                self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
-                self.single_chunk_emb = self.page_chunks_dict.get(self.current_chunk_id)
-
-        # not extended case
-        else:
-            
-            if self.current_chunk_id in self.relevant_chunks and self.current_chunk_id not in self.bag_of_chunks:
-                reward = 2
-            elif self.current_chunk_id in self.relevant_chunks and self.current_chunk_id in self.bag_of_chunks:
-                reward = 0
-            else:
-                reward = -1
-
-            if self.current_chunk_id not in self.bag_of_chunks:
-                self.bag_of_chunks.append(self.current_chunk_id)
-
-            # move to next
-            if self.current_rank_chunk == len(self.ranked_chunks) - 1:
-                self.current_rank_chunk = 0
-                self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
-                self.single_chunk_emb = self.page_chunks_dict.get(self.current_chunk_id)
-            else:
-                self.current_rank_chunk += 1
-                self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
-                self.single_chunk_emb = self.page_chunks_dict.get(self.current_chunk_id)
-
-        state_embedding = torch.concat((self.single_chunk_emb, self.query_emb, self.bag_of_chunks_embedding), dim = 0)
-
-        self.last_action = 'ad'
-        self.actions_taken['ad'] += 1
-
-        state_metadata = self.get_state_metadata()
+        self.actions_taken['td'] += 1
 
         return (state_embedding, state_metadata, reward, self.done)
 
@@ -316,10 +208,8 @@ class Topic:
 
         self.done = True
 
-        if self.last_action is None or self.actions_taken['ad'] == 0 or len(self.bag_of_chunks) == 0:
-            return self.discouraged_action('su', -1)
-
         bag_size = len(self.bag_of_chunks)
+
         relevant_size = len(self.relevant_chunks)
         TP = len([c for c in self.bag_of_chunks if c in self.relevant_chunks])
         
@@ -328,13 +218,15 @@ class Topic:
 
         self.f1_score = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
 
-        state_embedding = torch.concat((self.single_chunk_emb, self.query_emb, self.bag_of_chunks_embedding), dim = 0)
-
-        self.last_action = 'su'
         self.actions_taken['su'] += 1
 
-        reward = self.f1_score * 50
+        if bag_size == 0:
+            reward = -1
+        else:
+            reward = self.f1_score * 50
 
+        self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
+        state_embedding = self.get_state_embedding()
         state_metadata = self.get_state_metadata()
 
         return (state_embedding, state_metadata, reward, self.done)

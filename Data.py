@@ -85,7 +85,7 @@ class Data:
             pages[page_id].append(q)
 
         # determine number of pages for the first split
-        page_ids = list(pages.keys())
+        page_ids = sorted(pages.keys())
         split_index = int(len(page_ids) * first_split_ratio)
 
         first_page_ids = set(page_ids[:split_index])
