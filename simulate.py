@@ -12,6 +12,30 @@ from ReplayBuffer import PrioritizedReplayBuffer
 random.seed(1)
 torch.manual_seed(1)
 
+
+def pprint(topic, reward, state_metadata, action):
+
+    print(f"Last Action: {action}")
+    print(f"current_chunk_id: {topic.current_chunk_id}")
+    print(f"current_rank_chunk: {topic.current_rank_chunk}")
+    sm = state_metadata.tolist()
+    labels = [
+        "rank_position",
+        "remaining_loops",
+        "single_chunk_already_in_bag",
+        "next_chunk_already_in_bag",
+        "bag_size",
+        "sq_sim",
+        "dq_sim",
+        "bq_sim"
+    ]
+
+    print("State metadata:")
+    for label, value in zip(labels, sm):
+        print(f"  {label:35}: {value}")
+    print(f"Reward: {reward}")
+
+
 def main():
     pages_path = "data_chunks_emb/pages_chunked_emb.json"
     pages_doub_even_path = "data_chunks_emb/pages_doub_chunked_even.json"
@@ -36,35 +60,36 @@ def main():
 
     training_set = sorted(training_set)
 
-    query_id = training_set[1]
+    query_id = training_set[30] #30
     query = data.get_query_obj_from_id(query_id)
     page_id = query.get("page_id")
     page, page_even, page_odd = data.get_page_chunks_dict(page_id)
     query_emb = torch.tensor(query.get("query")).to(device)
     query_desc = query.get("query_desc")
     relevant_chunks = query.get("relevant_chunks")
-    ranked_chunks = data.cosine_sim_rank[str(query_id)]
+    ranked_chunks = data.get_ranked_with_prev_chunks_from_query_id(query_id)
+    #ranked_chunks = data.cosine_sim_rank[str(query_id)]
+
 
     print(f"Query Desc: {query_desc}")
     print(f"Relevant Chunks: {relevant_chunks}")
-    print(f"Ranked Chunks: {ranked_chunks}")
+    #print(f"Original Ranked Chunks: {sorted(orig_ranked_chunks)}")
+    print(f"Ranked Chunks.        : {ranked_chunks}")
 
     topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exp_loops)
     
     _, state_meta, reward, _ = topic.get_initial_step()
-    _, state_meta, reward, done = topic.skip()
-    print(topic.current_chunk_id in topic.relevant_chunks and topic.current_chunk_id not in topic.bag_of_chunks)
+    pprint(topic, reward, state_meta, 'init')
     _, state_meta, reward, done = topic.take_single()
-    print(reward)
-    print(topic.current_chunk_id)
-    _, state_meta, reward, done = topic.skip()
-    _, state_meta, reward, done = topic.skip()
-    _, state_meta, reward, done = topic.skip()
-    _, state_meta, reward, done = topic.skip()
+    pprint(topic, reward, state_meta, 'take_single')
     _, state_meta, reward, done = topic.take_single()
-    print(reward)
+    pprint(topic, reward, state_meta, 'take_single')
+    _, state_meta, reward, done = topic.skip()
+    pprint(topic, reward, state_meta, 'skip')
+    _, state_meta, reward, done = topic.take_double()
+    pprint(topic, reward, state_meta, 'take_double')
     _, state_meta, reward, done = topic.submit_current_bag()
-    print(reward)
+    pprint(topic, reward, state_meta, 'submit_current_bag')
 
     print(f"Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Actions: {topic.actions_taken}")
         

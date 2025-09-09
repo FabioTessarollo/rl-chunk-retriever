@@ -38,6 +38,7 @@ class Topic:
         self.max_exp_loops = max_exp_loops
         self.single_chunk_emb = None
         self.double_chunk_emb = None
+        self.skips = 0
 
     def cos_sim_norm(self, v1, v2):
         sim = torch.nn.functional.cosine_similarity(v1.unsqueeze(0), v2.unsqueeze(0))
@@ -62,6 +63,17 @@ class Topic:
         state_metadata = self.get_state_metadata()
         return (state_embedding, state_metadata, 0, self.done)
     
+    def set_f1_score(self):
+
+        bag_size = len(self.bag_of_chunks)
+        relevant_size = len(self.relevant_chunks)
+        TP = len([c for c in self.bag_of_chunks if c in self.relevant_chunks])
+        
+        recall = TP / relevant_size if relevant_size > 0 else 0
+        precision = TP / bag_size if bag_size > 0 else 0
+
+        self.f1_score = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+    
     def get_state_embedding(self):
 
         # get current chunk id embedding
@@ -82,15 +94,15 @@ class Topic:
 
     def skip(self):
 
-        reward = 0
+        self.skips += 1
         
         # point to the current chunk id over the rank
         self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
 
         if self.current_chunk_id in self.relevant_chunks and self.current_chunk_id not in self.bag_of_chunks:
-            reward = -0.1
+            reward = -0.01 #-0.05 * (self.current_loop + 1)
         else:
-            reward = 0
+            reward = 0 #-0.01 * (self.current_loop + 1)
 
         # restart if last in the rank, else go next
         if self.current_rank_chunk == len(self.ranked_chunks) - 1:
@@ -112,6 +124,8 @@ class Topic:
     def take_single(self):
 
         self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
+
+        # before_f1_score = self.f1_score
 
         # update bag mean embedding
         if len(self.bag_of_chunks) > 0:
@@ -146,11 +160,16 @@ class Topic:
 
         self.actions_taken['ts'] += 1
 
+        # self.set_f1_score()
+        # reward = self.f1_score - before_f1_score
+
         return (state_embedding, state_metadata, reward, self.done)
     
     def take_double(self):
 
         self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
+
+        # before_f1_score = self.f1_score
 
         if self.current_chunk_id == self.max_chunk_id:
             self.current_chunk_id -= 1
@@ -170,12 +189,10 @@ class Topic:
         both_not_in_bag = c1 not in self.bag_of_chunks and c2 not in self.bag_of_chunks
         one_not_in_bag = c1 not in self.bag_of_chunks or c2 not in self.bag_of_chunks
         one_wasnt_selected_by_cosine_sim = c1 not in self.ranked_chunks[:10] or c2 not in self.ranked_chunks[:10]
-        if both_relevant and both_not_in_bag and one_wasnt_selected_by_cosine_sim:
-            reward = 4
-        elif both_relevant and one_not_in_bag and one_wasnt_selected_by_cosine_sim:
-            reward = 2
+        if both_relevant and both_not_in_bag:
+            reward = 3
         elif both_relevant and one_not_in_bag:
-            reward = 1
+            reward = 2
         elif both_relevant:
             reward = 0
         else:
@@ -202,28 +219,23 @@ class Topic:
 
         self.actions_taken['td'] += 1
 
+        # self.set_f1_score()
+        # reward = self.f1_score - before_f1_score
+
         return (state_embedding, state_metadata, reward, self.done)
 
     def submit_current_bag(self):
 
         self.done = True
 
-        bag_size = len(self.bag_of_chunks)
-
-        relevant_size = len(self.relevant_chunks)
-        TP = len([c for c in self.bag_of_chunks if c in self.relevant_chunks])
-        
-        recall = TP / relevant_size if relevant_size > 0 else 0
-        precision = TP / bag_size if bag_size > 0 else 0
-
-        self.f1_score = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
-
         self.actions_taken['su'] += 1
 
-        if bag_size == 0:
+        self.set_f1_score()
+
+        if len(self.bag_of_chunks) == 0:
             reward = -1
         else:
-            reward = self.f1_score * 50
+            reward = self.f1_score*10
 
         self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
         state_embedding = self.get_state_embedding()

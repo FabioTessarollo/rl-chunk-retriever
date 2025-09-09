@@ -10,6 +10,7 @@ class Data:
         self.pages_doub_even_path = pages_doub_even_path
         self.pages_doub_odd_path = pages_doub_odd_path
         self.device = torch.device("mps")
+        self.cosine_sim_rank_wb = {}
 
     def load_pages(self):
         with open(self.pages_path, 'r', encoding='utf-8') as f:
@@ -42,6 +43,16 @@ class Data:
         with open(self.cosine_sim_rank_path, 'r', encoding='utf-8') as f:
             self.cosine_sim_rank = json.load(f)
             self.cosine_sim_rank = {k: v['relevant_chunks'] for k, v in self.cosine_sim_rank.items() if v}
+
+    def get_ranked_with_prev_chunks_from_query_id(self, query_id):
+        ranked_chunks = self.cosine_sim_rank[str(query_id)]
+        addtional_chunks = []
+        for n in ranked_chunks:
+            prev = n - 1
+            if prev not in ranked_chunks and prev != -1:
+                addtional_chunks.append(prev)
+        ranked_chunks.extend(addtional_chunks)
+        return ranked_chunks
 
     def get_page_chunks_dict(self, page_id):
         page = next((page for page in self.pages if page["page_id"] == page_id), None)

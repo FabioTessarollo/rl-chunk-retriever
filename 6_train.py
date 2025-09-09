@@ -12,6 +12,40 @@ from ReplayBuffer import PrioritizedReplayBuffer
 random.seed(1)
 torch.manual_seed(1)
 
+def print_branch_importance(model, proj_dim):
+    """
+    model: trained DuelingDQN
+    proj_dim: projection size per embedding (default 128)
+    """
+
+    # Weight matrix of fc1: shape (256, 4*proj_dim)
+    W = model.fc1.weight.detach().cpu()
+
+    # Split into 4 parts
+    W_single = W[:, 0:proj_dim]
+    W_double = W[:, proj_dim:2*proj_dim]
+    W_query  = W[:, 2*proj_dim:3*proj_dim]
+    W_bag    = W[:, 3*proj_dim:4*proj_dim]
+
+    norms = {
+        "single_chunk": torch.norm(W_single).item(),
+        "double_chunk": torch.norm(W_double).item(),
+        "query": torch.norm(W_query).item(),
+        "bag": torch.norm(W_bag).item(),
+    }
+
+    # Normalize to percentages for easier comparison
+    total = sum(norms.values())
+    rel = {k: v/total for k,v in norms.items()}
+
+    print("Branch weight norms (absolute):")
+    for k, v in norms.items():
+        print(f"  {k:>12}: {v:.4f}")
+
+    print("\nBranch relative importance (normalized):")
+    for k, v in rel.items():
+        print(f"  {k:>12}: {100*v:.2f}%")
+
 def evaluate_on_validation(data, validation_set, online_net, device, max_exp_loops, max_steps_per_episode):
     """Evaluate the model on validation set without training"""
     val_reward = 0
@@ -88,7 +122,7 @@ def main():
 
     fair_query_ids, difficult_query_ids = data.get_query_ids_by_difficulty()
 
-    training_set, validation_set = data.split_query_ids(fair_query_ids, 0.7)
+    train_set, validation_set = data.split_query_ids(fair_query_ids, 0.7)
 
     proj_dim = 256
     metadata_dim = 8
@@ -158,7 +192,7 @@ def main():
         online_net.train()
         epoch_reward = 0
         epoch_f1_score = 0
-        random.shuffle(training_set)
+        random.shuffle(train_set)
 
         # Log current learning rate
         current_lr = optimizer.param_groups[0]['lr']
@@ -166,14 +200,14 @@ def main():
         logging.info(f"Epoch {epoch} - Learning Rate: {current_lr:.6f}")
 
         print(f"Epoch: {epoch}")
-        for query_id in training_set:
+        for query_id in train_set:
             query = data.get_query_obj_from_id(query_id)
             page_id = query.get("page_id")
             page, page_even, page_odd = data.get_page_chunks_dict(page_id)
             query_emb = torch.tensor(query.get("query")).to(device)
             query_desc = query.get("query_desc")
             relevant_chunks = query.get("relevant_chunks")
-            ranked_chunks = data.cosine_sim_rank[str(query_id)]
+            ranked_chunks = data.get_ranked_with_prev_chunks_from_query_id(query_id)
 
             topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exp_loops)
 
@@ -291,9 +325,20 @@ def main():
                 max_exp_loops, max_steps_per_episode
             )
         
-            # Validation test after training
-            logging.info(f"Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}, Epsilon: {epsilon:.4f}")
-            print(f"Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
+            # Validation test
+            logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}, Epsilon: {epsilon:.4f}")
+            print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
+
+    avg_train_reward, avg_train_f1_score = evaluate_on_validation(
+        data, train_set, online_net, device, 
+        max_exp_loops, max_steps_per_episode
+    )
+    
+    # Training test (greedy)
+    logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}, Epsilon: {epsilon:.4f}")
+    print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
+
+    print_branch_importance(online_net, proj_dim)
 
 if __name__ == "__main__":
     main()

@@ -18,8 +18,8 @@ class DuelingDQN(nn.Module):
         combined_dim = 4 * proj_dim  # 512 if proj_dim=128
 
         # shared trunk
-        self.fc1 = nn.Linear(combined_dim, 256)
-        self.fc2 = nn.Linear(256, 128)
+        self.fc1 = nn.Linear(combined_dim, 512)
+        self.fc2 = nn.Linear(512, 128)
 
         # value stream
         self.value_fc = nn.Linear(128, 64)
