@@ -70,7 +70,7 @@ def evaluate_on_validation(data, validation_set, online_net, device, max_exp_loo
         episode_steps = 0
         
         # Greedy evaluation (no exploration)
-        while not done and episode_steps < max_steps_per_episode:
+        while not done:
             episode_steps += 1
             
             with torch.no_grad():
@@ -120,9 +120,9 @@ def main():
     data.load_relevant()
     data.load_cosine_sim()
 
-    fair_query_ids, difficult_query_ids = data.get_query_ids_by_difficulty()
+    fair_query_ids, superdifficult_query_ids = data.get_query_ids_by_difficulty()
 
-    train_set, validation_set = data.split_query_ids(fair_query_ids, 0.7)
+    train_set, validation_set = data.balanced_split_query_ids(fair_query_ids, 0.7)
 
     proj_dim = 256
     metadata_dim = 8
@@ -186,6 +186,9 @@ def main():
     )
 
     logging.basicConfig(filename='rl_training.log', level=logging.INFO, format='%(asctime)s - %(message)s')
+    extra_logger = logging.getLogger("extra"); extra_logger.addHandler(logging.FileHandler("hyperparameters.log"))
+    extra_logger.info(f"Parameters -> proj_dim={proj_dim}, gamma={gamma}, epsilon={epsilon}, epsilon_min={epsilon_min}, epsilon_decay={epsilon_decay}, batch_size={batch_size}, replay_capacity={replay_capacity}, lr={lr}, target_update={target_update}, epochs={epochs}, max_steps_per_episode={max_steps_per_episode}, max_exp_loops={max_exp_loops}, action_dim={action_dim}, scheduler_type={scheduler_type}, step_size={step_size}, gamma_scheduler={gamma_scheduler}, eta_min={eta_min}, patience={patience}, factor={factor}, per_alpha={per_alpha}, per_beta={per_beta}, per_beta_increment={per_beta_increment}, device={device}")
+
 
     step_count = 0
     for epoch in range(epochs):
@@ -217,7 +220,7 @@ def main():
             episode_reward = 0
             done = False
             episode_steps = 0
-            while not done and episode_steps < max_steps_per_episode:
+            while not done:
                 episode_steps += 1
                 step_count += 1
                 if random.random() < epsilon:
@@ -329,14 +332,14 @@ def main():
             logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}, Epsilon: {epsilon:.4f}")
             print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
 
-    avg_train_reward, avg_train_f1_score = evaluate_on_validation(
-        data, train_set, online_net, device, 
-        max_exp_loops, max_steps_per_episode
-    )
-    
-    # Training test (greedy)
-    logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}, Epsilon: {epsilon:.4f}")
-    print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
+            avg_train_reward, avg_train_f1_score = evaluate_on_validation(
+                data, train_set, online_net, device, 
+                max_exp_loops, max_steps_per_episode
+            )
+            
+            # Training test (greedy)
+            logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}, Epsilon: {epsilon:.4f}")
+            print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
 
     print_branch_importance(online_net, proj_dim)
 

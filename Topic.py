@@ -205,12 +205,12 @@ class Topic:
             self.bag_of_chunks.append(c2)
         
         # go next: restart if last -1 in the rank, else go next
-        if self.current_rank_chunk >= len(self.ranked_chunks)-2:
+        if self.current_rank_chunk == len(self.ranked_chunks) - 1:
             self.current_loop += 1
             self.current_rank_chunk = 0
-            self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
+            self.current_chunk_id = self.ranked_chunks[0]
         else:
-            self.current_rank_chunk += 2
+            self.current_rank_chunk += 1
             self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
 
         # new state
