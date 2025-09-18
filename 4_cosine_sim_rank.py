@@ -132,8 +132,11 @@ def main():
     data.load_pages_odd()
     data.load_relevant()
 
+    # Fair queries
+    fair_query_ids, superdifficult_query_ids = data.get_query_ids_by_difficulty()
+
     # Split data into training and validation sets
-    training_set, validation_set = data.split_query_ids(data.query_ids, 0.7)
+    training_set, validation_set = data.balanced_split_query_ids(fair_query_ids, 0.7)
     
     print(f"Training queries: {len(training_set)}")
     print(f"Validation queries: {len(validation_set)}")

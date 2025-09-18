@@ -4,11 +4,15 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 import logging
+from datetime import datetime
+
 from Data import Data
 from Topic import Topic
 from DuelingDQN import DuelingDQN
 from ReplayBuffer import PrioritizedReplayBuffer
+from EarlyStopping import EarlyStopping
 
+now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 random.seed(1)
 torch.manual_seed(1)
 
@@ -46,7 +50,7 @@ def print_branch_importance(model, proj_dim):
     for k, v in rel.items():
         print(f"  {k:>12}: {100*v:.2f}%")
 
-def evaluate_on_validation(data, validation_set, online_net, device, max_exp_loops, max_steps_per_episode):
+def evaluate_on_validation(data, validation_set, online_net, device, max_exp_loops):
     """Evaluate the model on validation set without training"""
     val_reward = 0
     val_f1_score = 0
@@ -99,7 +103,7 @@ def evaluate_on_validation(data, validation_set, online_net, device, max_exp_loo
         val_reward += episode_reward
         val_f1_score += topic.f1_score
 
-        logging.info(f"Validation - Query: {query_desc}, Episode Reward: {episode_reward:.4f}, Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Relevant: {topic.relevant_chunks}, Top_10_Rank: {topic.ranked_chunks[:10]}, Actions: {topic.actions_taken}")
+        logging.info(f"GREEDY - Query: {query_desc}, Episode Reward: {episode_reward:.4f}, Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Relevant: {topic.relevant_chunks}, Top_10_Rank: {topic.ranked_chunks[:10]}, Actions: {topic.actions_taken}")
     
     avg_val_reward = val_reward / len(validation_set)
     avg_val_f1_score = val_f1_score / len(validation_set)
@@ -124,6 +128,7 @@ def main():
 
     train_set, validation_set = data.balanced_split_query_ids(fair_query_ids, 0.7)
 
+    best_score = 0
     proj_dim = 256
     metadata_dim = 8
 
@@ -137,15 +142,14 @@ def main():
     lr = 0.0005 # initial lr
     target_update = 100 #100
     epochs = 40
-    max_steps_per_episode = 100 #100
-    max_exp_loops = 3
+    max_exp_loops = 3 # PROVARE A METTERE 1 SOLO LOOP
     action_dim = 4
 
     # Scheduler hyperparameters
-    scheduler_type = "cosine"  # Options: "step", "cosine", "exponential", "plateau"
+    scheduler_type = "plateau"  # Options: "step", "cosine", "exponential", "plateau"
     step_size = 10  # For StepLR
     gamma_scheduler = 0.9  # For StepLR and ExponentialLR
-    eta_min = 1e-6  # For CosineAnnealingLR
+    eta_min = 1e-5  # For CosineAnnealingLR
     patience = 5  # For ReduceLROnPlateau
     factor = 0.5  # For ReduceLROnPlateau
 
@@ -153,6 +157,9 @@ def main():
     per_alpha = 0.6      # Prioritization exponent
     per_beta = 0.4       # Importance sampling correction
     per_beta_increment = 0.001  # Beta annealing rate
+
+    # Early Stopping
+    es = EarlyStopping(patience=20, delta_ratio=0.01)
 
     # Set device to MPS if available (for Apple Silicon acceleration), else CPU
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -172,12 +179,8 @@ def main():
         scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma_scheduler)
     elif scheduler_type == "plateau":
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=factor, 
-                                                       patience=patience, verbose=True)
-    else:
-        scheduler = None
-        print(f"Warning: Unknown scheduler type '{scheduler_type}'. No scheduler will be used.")
-    
-    
+                                                       patience=patience)
+      
     replay = PrioritizedReplayBuffer(
         capacity=replay_capacity, 
         alpha=per_alpha, 
@@ -186,9 +189,7 @@ def main():
     )
 
     logging.basicConfig(filename='rl_training.log', level=logging.INFO, format='%(asctime)s - %(message)s')
-    extra_logger = logging.getLogger("extra"); extra_logger.addHandler(logging.FileHandler("hyperparameters.log"))
-    extra_logger.info(f"Parameters -> proj_dim={proj_dim}, gamma={gamma}, epsilon={epsilon}, epsilon_min={epsilon_min}, epsilon_decay={epsilon_decay}, batch_size={batch_size}, replay_capacity={replay_capacity}, lr={lr}, target_update={target_update}, epochs={epochs}, max_steps_per_episode={max_steps_per_episode}, max_exp_loops={max_exp_loops}, action_dim={action_dim}, scheduler_type={scheduler_type}, step_size={step_size}, gamma_scheduler={gamma_scheduler}, eta_min={eta_min}, patience={patience}, factor={factor}, per_alpha={per_alpha}, per_beta={per_beta}, per_beta_increment={per_beta_increment}, device={device}")
-
+    extra_logger = logging.getLogger("extra"); extra_logger.addHandler(logging.FileHandler("hyperparameters.csv"))
 
     step_count = 0
     for epoch in range(epochs):
@@ -308,39 +309,43 @@ def main():
         avg_epoch_reward = epoch_reward / len(fair_query_ids)
         avg_epoch_f1_score = epoch_f1_score / len(fair_query_ids)
 
-        # Step the scheduler
-        if scheduler is not None:
-            if scheduler_type == "plateau":
-                # For ReduceLROnPlateau, we need to pass a metric (using F1 score here)
-                scheduler.step(avg_epoch_f1_score)
-            else:
-                # For other schedulers, just step without arguments
-                scheduler.step()
-
         logging.info(f"Epoch: {epoch}, Average Reward: {avg_epoch_reward:.4f}, Average F1: {avg_epoch_f1_score:.4f}, Epsilon: {epsilon:.4f}")
         print(f"Average Reward: {avg_epoch_reward:.4f}, Average F1: {avg_epoch_f1_score:.4f}")
 
-        if epoch > epochs/2:
-            # Validation phase
-            online_net.eval()
-            avg_val_reward, avg_val_f1_score = evaluate_on_validation(
-                data, validation_set, online_net, device, 
-                max_exp_loops, max_steps_per_episode
-            )
-        
-            # Validation test
-            logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}, Epsilon: {epsilon:.4f}")
-            print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
+        # TRAIN SET GREEDY
+        avg_train_reward, avg_train_f1_score = evaluate_on_validation(
+            data, train_set, online_net, device, 
+            max_exp_loops
+        )
+        logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}, Epsilon: {epsilon:.4f}")
+        print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
 
-            avg_train_reward, avg_train_f1_score = evaluate_on_validation(
-                data, train_set, online_net, device, 
-                max_exp_loops, max_steps_per_episode
-            )
-            
-            # Training test (greedy)
-            logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}, Epsilon: {epsilon:.4f}")
-            print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
+        # VALIDATION SET GREEDY
+        online_net.eval()
+        avg_val_reward, avg_val_f1_score = evaluate_on_validation(
+            data, validation_set, online_net, device, 
+            max_exp_loops
+        )
+        logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}, Epsilon: {epsilon:.4f}")
+        print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
 
+        # Step the scheduler
+        if scheduler is not None:
+            if scheduler_type == "plateau":
+                scheduler.step(avg_val_f1_score)
+            else:
+                scheduler.step()
+
+        if avg_val_f1_score > best_score:
+            best_score = avg_val_f1_score
+            torch.save(online_net.state_dict(), "models/rl-chunk-retriever.pt")
+
+        if es.step(avg_val_f1_score):
+            print(f"Early stopping at epoch {epoch}")
+            break
+
+    extra_logger.info(f"{now_str}\t{proj_dim}\t{gamma}\t{epsilon}\t{epsilon_min}\t{epsilon_decay}\t{batch_size}\t{replay_capacity}\t{lr}\t{target_update}\t{epochs}\t{max_exp_loops}\t{action_dim}\t{scheduler_type}\t{per_alpha}\t{per_beta}\t{per_beta_increment}\t{best_score:.4f}")
+    
     print_branch_importance(online_net, proj_dim)
 
 if __name__ == "__main__":
