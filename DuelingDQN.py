@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class DuelingDQN(nn.Module):
-    def __init__(self, metadata_dim, action_dim, proj_dim=128):
+    def __init__(self, metadata_dim, action_dim, proj_dim=128, dropout_p=0.1):
         super(DuelingDQN, self).__init__()
 
         self.single_proj = nn.Linear(768, proj_dim)
@@ -20,6 +20,7 @@ class DuelingDQN(nn.Module):
         # shared trunk
         self.fc1 = nn.Linear(combined_dim, 512)
         self.fc2 = nn.Linear(512, 128)
+        self.dropout = nn.Dropout(p=dropout_p)
 
         # value stream
         self.value_fc = nn.Linear(128, 64)
@@ -44,7 +45,9 @@ class DuelingDQN(nn.Module):
 
         # shared trunk
         x = F.relu(self.fc1(x))
+        x = self.dropout(x)
         x = F.relu(self.fc2(x))
+        x = self.dropout(x)
 
         # value stream
         v = F.relu(self.value_fc(x))

@@ -5,6 +5,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import logging
 from datetime import datetime
+import argparse
 
 from Data import Data
 from Topic import Topic
@@ -17,10 +18,6 @@ random.seed(1)
 torch.manual_seed(1)
 
 def print_branch_importance(model, proj_dim):
-    """
-    model: trained DuelingDQN
-    proj_dim: projection size per embedding (default 128)
-    """
 
     # Weight matrix of fc1: shape (256, 4*proj_dim)
     W = model.fc1.weight.detach().cpu()
@@ -131,27 +128,48 @@ def main():
     best_score = 0
     proj_dim = 256
     metadata_dim = 8
-
-    # Hyperparameters
-    gamma = 0.99
     epsilon = 1.0
-    epsilon_min = 0.01
-    epsilon_decay = 0.99993
-    batch_size = 64 #32 #64
-    replay_capacity = 10000
-    lr = 0.0005 # initial lr
-    target_update = 100 #100
-    epochs = 40
-    max_exp_loops = 3 # PROVARE A METTERE 1 SOLO LOOP
-    action_dim = 4
+
+    # TO DO
+    # provare reward negativo skip solo dopo il primo loop
+    # provare gamma molto bassa
+    # provare no submit
+    # provare a non includere il submit nelle azioni random
+    # more epoches with the 0 reward for bad skip in first loop
+    # curriculum learning by epoches
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("--proj_dim", type=int, default=256)
+    parser.add_argument("--gamma", type=float, default=0.99) #0.99
+    parser.add_argument("--epsilon_min", type=float, default=0.01)
+    parser.add_argument("--epsilon_decay", type=float, default=0.99993)
+    parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--replay_capacity", type=int, default=10000)
+    parser.add_argument("--lr", type=float, default=0.0005)
+    parser.add_argument("--target_update", type=int, default=100)
+    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--max_exp_loops", type=int, default=3) #3
+    parser.add_argument("--action_dim", type=int, default=4) #4
+    parser.add_argument("--dropout_p", type=float, default=0)
+
+    parser.add_argument("--scheduler_type", default="plateau") # Options: "step", "cosine", "exponential", "plateau"
+    parser.add_argument("--per_alpha", type=float, default=0.6)
+    parser.add_argument("--per_beta", type=float, default=0.4)
+    parser.add_argument("--per_beta_increment", type=float, default=0.001)
+
+    args = parser.parse_args()
+
+    proj_dim, gamma, epsilon_min, epsilon_decay, batch_size, replay_capacity, lr, target_update, epochs, max_exp_loops, action_dim, scheduler_type, per_alpha, per_beta, per_beta_increment, dropout_p = \
+        args.proj_dim, args.gamma, args.epsilon_min, args.epsilon_decay, args.batch_size, args.replay_capacity, args.lr, args.target_update, args.epochs, args.max_exp_loops, args.action_dim, args.scheduler_type, args.per_alpha, args.per_beta, args.per_beta_increment, args.dropout_p
 
     # Scheduler hyperparameters
-    scheduler_type = "plateau"  # Options: "step", "cosine", "exponential", "plateau"
     step_size = 10  # For StepLR
     gamma_scheduler = 0.9  # For StepLR and ExponentialLR
     eta_min = 1e-5  # For CosineAnnealingLR
     patience = 5  # For ReduceLROnPlateau
     factor = 0.5  # For ReduceLROnPlateau
+    dropout_p = 0
 
     # PER hyperparameters
     per_alpha = 0.6      # Prioritization exponent
@@ -159,16 +177,16 @@ def main():
     per_beta_increment = 0.001  # Beta annealing rate
 
     # Early Stopping
-    es = EarlyStopping(patience=20, delta_ratio=0.01)
+    es = EarlyStopping(patience=12, delta_ratio=0.01)
 
     # Set device to MPS if available (for Apple Silicon acceleration), else CPU
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    online_net = DuelingDQN(metadata_dim, action_dim, proj_dim).to(device)
-    target_net = DuelingDQN(metadata_dim, action_dim, proj_dim).to(device)
+    online_net = DuelingDQN(metadata_dim, action_dim, proj_dim, dropout_p).to(device)
+    target_net = DuelingDQN(metadata_dim, action_dim, proj_dim, dropout_p).to(device)
     target_net.load_state_dict(online_net.state_dict())
-    optimizer = optim.Adam(online_net.parameters(), lr=lr)
+    optimizer = optim.Adam(online_net.parameters(), lr=lr) #, weight_decay=1e-5)
 
         # Initialize scheduler
     if scheduler_type == "step":
@@ -241,7 +259,7 @@ def main():
                     next_emb, next_meta, reward, done = topic.take_single()
                 elif action == 2:
                     next_emb, next_meta, reward, done = topic.take_double()
-                elif action == 3:
+                elif action == 3 and action_dim == 4:
                     next_emb, next_meta, reward, done = topic.submit_current_bag()
                     
                 next_emb = next_emb.to(device)
@@ -344,7 +362,7 @@ def main():
             print(f"Early stopping at epoch {epoch}")
             break
 
-    extra_logger.info(f"{now_str}\t{proj_dim}\t{gamma}\t{epsilon}\t{epsilon_min}\t{epsilon_decay}\t{batch_size}\t{replay_capacity}\t{lr}\t{target_update}\t{epochs}\t{max_exp_loops}\t{action_dim}\t{scheduler_type}\t{per_alpha}\t{per_beta}\t{per_beta_increment}\t{best_score:.4f}")
+    extra_logger.info(f"{now_str}\t{proj_dim}\t{gamma}\t{epsilon_min}\t{epsilon_decay}\t{batch_size}\t{replay_capacity}\t{lr}\t{target_update}\t{epochs}\t{max_exp_loops}\t{action_dim}\t{scheduler_type}\t{per_alpha}\t{per_beta}\t{per_beta_increment}\t{dropout_p}\t{best_score:.4f}")
     
     print_branch_importance(online_net, proj_dim)
 

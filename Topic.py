@@ -100,7 +100,7 @@ class Topic:
         self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
 
         if self.current_chunk_id in self.relevant_chunks and self.current_chunk_id not in self.bag_of_chunks:
-            reward = -0.01 #-0.05 * (self.current_loop + 1)
+            reward = 0#-0.01 #if self.current_loop > 0 else 0 #-0.05 * (self.current_loop + 1)
         else:
             reward = 0 #-0.01 * (self.current_loop + 1)
 
