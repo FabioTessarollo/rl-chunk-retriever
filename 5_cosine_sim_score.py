@@ -124,16 +124,22 @@ def main():
     pages_doub_even_path = "data_chunks_emb/pages_doub_chunked_even.json"
     pages_doub_odd_path = "data_chunks_emb/pages_doub_chunked_odd.json"
     relevant_path = "data_chunks_emb/relevant_chunks_emb.json"
-    n_examples = 2
+    cosine_sim_path = "data_chunks_cos_sim/cosine_sim_rank.json"
 
-    data = Data(pages_path, relevant_path, pages_doub_even_path, pages_doub_odd_path)
+    data = Data(pages_path, relevant_path, pages_doub_even_path, pages_doub_odd_path, cosine_sim_path)
     data.load_pages()
     data.load_pages_even()
     data.load_pages_odd()
     data.load_relevant()
+    data.load_cosine_sim()
+
+    n_examples = 2
+
+    # Fair queries
+    fair_query_ids, superdifficult_query_ids = data.get_query_ids_by_difficulty()
 
     # Split data into training and validation sets
-    training_set, validation_set = data.split_query_ids(data.query_ids, 0.7)
+    training_set, validation_set = data.balanced_split_query_ids(fair_query_ids, 0.7)
     
     print(f"Training queries: {len(training_set)}")
     print(f"Validation queries: {len(validation_set)}")

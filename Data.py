@@ -1,5 +1,8 @@
 import json
 import torch
+import random
+from statistics import mean
+from collections import defaultdict
 
 class Data:
 
@@ -10,6 +13,7 @@ class Data:
         self.pages_doub_even_path = pages_doub_even_path
         self.pages_doub_odd_path = pages_doub_odd_path
         self.device = torch.device("mps")
+        self.cosine_sim_rank_wb = {}
 
     def load_pages(self):
         with open(self.pages_path, 'r', encoding='utf-8') as f:
@@ -43,6 +47,16 @@ class Data:
             self.cosine_sim_rank = json.load(f)
             self.cosine_sim_rank = {k: v['relevant_chunks'] for k, v in self.cosine_sim_rank.items() if v}
 
+    def get_ranked_with_prev_chunks_from_query_id(self, query_id):
+        ranked_chunks = self.cosine_sim_rank[str(query_id)]
+        addtional_chunks = []
+        for n in ranked_chunks:
+            prev = n - 1
+            if prev not in ranked_chunks and prev != -1:
+                addtional_chunks.append(prev)
+        ranked_chunks.extend(addtional_chunks)
+        return ranked_chunks
+
     def get_page_chunks_dict(self, page_id):
         page = next((page for page in self.pages if page["page_id"] == page_id), None)
         page_even = next((page for page in self.pages_even if page["page_id"] == page_id), None)
@@ -72,6 +86,9 @@ class Data:
         return fair_query_ids, difficult_query_ids
     
     def split_query_ids(self, query_ids, first_split_ratio):
+
+        random.seed(1)
+
         first_set = []
         second_set = []
         pages = {}
@@ -85,7 +102,7 @@ class Data:
             pages[page_id].append(q)
 
         # determine number of pages for the first split
-        page_ids = list(pages.keys())
+        page_ids = sorted(pages.keys())
         split_index = int(len(page_ids) * first_split_ratio)
 
         first_page_ids = set(page_ids[:split_index])
@@ -97,9 +114,92 @@ class Data:
         for pid in second_page_ids:
             second_set.extend(pages[pid])
 
+        first_set = sorted(first_set)
+        random.shuffle(first_set)
+        second_set = sorted(second_set)
+        random.shuffle(second_set)
+
+        return first_set, second_set
+        
+    def balanced_split_query_ids(self, query_ids, first_split_ratio):
+        first_set = []
+        second_set = []
+        pages = {}
+        query_score = {}
+
+        # map page_id -> list of query_ids
+        for q in query_ids:
+            query = self.get_query_obj_from_id(q)
+            page_id = query.get("page_id")
+            if page_id not in pages:
+                pages[page_id] = []
+            pages[page_id].append(q)
+
+            relevant_chunks = query.get("relevant_chunks")
+            ranked_chunks = self.get_ranked_with_prev_chunks_from_query_id(q)
+
+            score = 0
+            for i, elem in enumerate(ranked_chunks):
+                if elem in relevant_chunks:
+                    score += 1 / (i + 1)
+            
+            query_score[q] = score
+
+        # 1. Compute mean score per page
+        page_mean = {
+            page_id: mean(query_score[q] for q in queries)
+            for page_id, queries in pages.items()
+        }
+
+        # 2. Sort by mean score and assign classes
+        # Use page_id as tiebreaker for deterministic sorting
+        sorted_pages = sorted(page_mean.items(), key=lambda x: (x[1], x[0]))
+        n = len(sorted_pages)
+        third = n // 3
+
+        page_class = {}
+        for i, (page_id, _) in enumerate(sorted_pages):
+            if i < third:
+                cls = 'low'
+            elif i < 2 * third:
+                cls = 'medium'
+            else:
+                cls = 'high'
+            page_class[page_id] = cls
+
+        # 3. Group by class
+        class_groups = defaultdict(list)
+        for pid, cls in page_class.items():
+            class_groups[cls].append(pid)
+
+        # 4. Split within each class
+        first_page_ids = []
+        second_page_ids = []
+
+        for cls in ['low', 'medium', 'high']:  # enforce class order
+            # Sort by mean score, then by page_id for deterministic ordering
+            ids_sorted = sorted(class_groups[cls], key=lambda pid: (page_mean[pid], pid))
+            split_index = int(len(ids_sorted) * first_split_ratio)
+            first_page_ids.extend(ids_sorted[:split_index])
+            second_page_ids.extend(ids_sorted[split_index:])
+
+        # 5. Order the final sets by mean score (FIXED INDENTATION)
+        first_page_ids = sorted(first_page_ids, key=lambda pid: (page_mean[pid], pid))
+        second_page_ids = sorted(second_page_ids, key=lambda pid: (page_mean[pid], pid))
+
+        # assign query_ids according to page split, ordered by score within each page
+        for pid in first_page_ids:
+            # Sort queries within each page by score (ascending)
+            page_queries = sorted(pages[pid], key=lambda q: query_score[q])
+            first_set.extend(page_queries)
+        for pid in second_page_ids:
+            # Sort queries within each page by score (ascending)
+            page_queries = sorted(pages[pid], key=lambda q: query_score[q])
+            second_set.extend(page_queries)
+
         return first_set, second_set
 
-        
+            
 
-        
+            
 
