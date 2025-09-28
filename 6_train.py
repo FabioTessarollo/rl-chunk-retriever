@@ -18,11 +18,9 @@ random.seed(1)
 torch.manual_seed(1)
 
 def print_branch_importance(model, proj_dim):
-
-    # Weight matrix of fc1: shape (256, 4*proj_dim)
+    # ---- Branch importance (fc1) ----
     W = model.fc1.weight.detach().cpu()
 
-    # Split into 4 parts
     W_single = W[:, 0:proj_dim]
     W_double = W[:, proj_dim:2*proj_dim]
     W_query  = W[:, 2*proj_dim:3*proj_dim]
@@ -35,9 +33,8 @@ def print_branch_importance(model, proj_dim):
         "bag": torch.norm(W_bag).item(),
     }
 
-    # Normalize to percentages for easier comparison
     total = sum(norms.values())
-    rel = {k: v/total for k,v in norms.items()}
+    rel = {k: v/total for k, v in norms.items()}
 
     print("Branch weight norms (absolute):")
     for k, v in norms.items():
@@ -46,6 +43,31 @@ def print_branch_importance(model, proj_dim):
     print("\nBranch relative importance (normalized):")
     for k, v in rel.items():
         print(f"  {k:>12}: {100*v:.2f}%")
+
+    # ---- Metadata neuron importance in advantage stream ----
+    W_adv = model.adv_out.weight.detach().cpu()  # shape: (action_dim, 64 + metadata_dim)
+
+    hidden_weights = W_adv[:, :64]                     # (action_dim, 64)
+    metadata_weights = W_adv[:, 64:]                   # (action_dim, metadata_dim)
+
+    hidden_norms = torch.norm(hidden_weights, dim=0)   # (64,)
+    metadata_norms = torch.norm(metadata_weights, dim=0)  # (metadata_dim,)
+
+    # totals
+    total_hidden = hidden_norms.sum().item()
+    total_meta = metadata_norms.sum().item()
+
+    # normalize metadata importances (relative only among metadata)
+    rel_meta = metadata_norms / total_meta if total_meta > 0 else metadata_norms
+
+    print("\nAdvantage stream metadata neuron importances:")
+    for i, (abs_val, rel_val) in enumerate(zip(metadata_norms.tolist(), rel_meta.tolist()), 1):
+        print(f"  metadata_{i:02d}: abs={abs_val:.4f}, rel={100*rel_val:.2f}%")
+
+    print(f"\nTotal hidden neurons importance (sum abs norms): {total_hidden:.4f}")
+    print(f"Average hidden neuron importance (abs norm): {hidden_norms.mean().item():.4f}")
+    print(f"Total metadata neurons importance (sum abs norms): {total_meta:.4f}")
+
 
 def evaluate_on_validation(data, validation_set, online_net, device, max_exp_loops):
     """Evaluate the model on validation set without training"""
@@ -60,8 +82,9 @@ def evaluate_on_validation(data, validation_set, online_net, device, max_exp_loo
         relevant_chunks = query.get("relevant_chunks")
         ranked_chunks = data.cosine_sim_rank[str(query_id)]
         query_desc = query.get("query_desc")
+        avg_similarity = data.get_avg_sim(query_id)
 
-        topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exp_loops)
+        topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exp_loops, avg_similarity)
 
         state_emb, state_meta, _, _ = topic.get_initial_step()
         state_emb = state_emb.to(device)
@@ -131,12 +154,16 @@ def main():
     epsilon = 1.0
 
     # TO DO
+    # try removing the / in between before embedding
+    # passing metadata earlier
+    # curriculum learning by epoches
+    # reduce PER BETA to lower biased sampling on difficult data
+    # TD3
+    # starting with some weights
+    # dividere la similarità per la sim media
     # provare reward negativo skip solo dopo il primo loop
-    # provare gamma molto bassa
-    # provare no submit
     # provare a non includere il submit nelle azioni random
     # more epoches with the 0 reward for bad skip in first loop
-    # curriculum learning by epoches
 
     parser = argparse.ArgumentParser()
 
@@ -148,7 +175,7 @@ def main():
     parser.add_argument("--replay_capacity", type=int, default=10000)
     parser.add_argument("--lr", type=float, default=0.0005)
     parser.add_argument("--target_update", type=int, default=100)
-    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--epochs", type=int, default=80)
     parser.add_argument("--max_exp_loops", type=int, default=3) #3
     parser.add_argument("--action_dim", type=int, default=4) #4
     parser.add_argument("--dropout_p", type=float, default=0)
@@ -167,17 +194,16 @@ def main():
     step_size = 10  # For StepLR
     gamma_scheduler = 0.9  # For StepLR and ExponentialLR
     eta_min = 1e-5  # For CosineAnnealingLR
-    patience = 5  # For ReduceLROnPlateau
+    patience = 5  # For ReduceLROnPlateau #5 
     factor = 0.5  # For ReduceLROnPlateau
-    dropout_p = 0
 
     # PER hyperparameters
-    per_alpha = 0.6      # Prioritization exponent
+    per_alpha = 0.6      # Prioritization exponent #0.6 !!!!!!!!!!!!!!!!!!!!!!!!!!!!
     per_beta = 0.4       # Importance sampling correction
     per_beta_increment = 0.001  # Beta annealing rate
 
     # Early Stopping
-    es = EarlyStopping(patience=12, delta_ratio=0.01)
+    es = EarlyStopping(patience=25, delta_ratio=0.01)
 
     # Set device to MPS if available (for Apple Silicon acceleration), else CPU
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -192,7 +218,7 @@ def main():
     if scheduler_type == "step":
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma_scheduler)
     elif scheduler_type == "cosine":
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=eta_min)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs-20, eta_min=eta_min)
     elif scheduler_type == "exponential":
         scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma_scheduler)
     elif scheduler_type == "plateau":
@@ -206,8 +232,11 @@ def main():
         beta_increment=per_beta_increment
     )
 
-    logging.basicConfig(filename='rl_training.log', level=logging.INFO, format='%(asctime)s - %(message)s')
-    extra_logger = logging.getLogger("extra"); extra_logger.addHandler(logging.FileHandler("hyperparameters.csv"))
+    logging.basicConfig(filename='rl_training.log', level=logging.INFO, format='%(asctime)s - %(message)s', filemode="w")
+    extra_logger = logging.getLogger("extra")
+    extra_handler = logging.FileHandler("hyperparameters.csv", mode="a")
+    extra_logger.addHandler(extra_handler)
+    extra_logger.setLevel(logging.INFO)
 
     step_count = 0
     for epoch in range(epochs):
@@ -230,8 +259,9 @@ def main():
             query_desc = query.get("query_desc")
             relevant_chunks = query.get("relevant_chunks")
             ranked_chunks = data.get_ranked_with_prev_chunks_from_query_id(query_id)
+            avg_similarity = data.get_avg_sim(query_id)
 
-            topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exp_loops)
+            topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exp_loops, avg_similarity)
 
             state_emb, state_meta, _, _ = topic.get_initial_step()
             state_emb = state_emb.to(device)

@@ -50,9 +50,10 @@ def main():
     data.load_relevant()
     data.load_cosine_sim()
 
-    fair_query_ids, difficult_query_ids = data.get_query_ids_by_difficulty()
+    fair_query_ids, superdifficult_query_ids = data.get_query_ids_by_difficulty()
 
-    training_set, validation_set = data.split_query_ids(fair_query_ids, 0.7)
+    training_set, validation_set = data.balanced_split_query_ids(fair_query_ids, 0.7)
+    print(validation_set)
 
     max_exp_loops=30
 
@@ -60,7 +61,7 @@ def main():
 
     training_set = sorted(training_set)
 
-    query_id = training_set[30] #30
+    query_id = validation_set[0] #30
     query = data.get_query_obj_from_id(query_id)
     page_id = query.get("page_id")
     page, page_even, page_odd = data.get_page_chunks_dict(page_id)
@@ -68,14 +69,16 @@ def main():
     query_desc = query.get("query_desc")
     relevant_chunks = query.get("relevant_chunks")
     ranked_chunks = data.get_ranked_with_prev_chunks_from_query_id(query_id)
+    avg_similarity = data.get_avg_sim(query_id)
     #ranked_chunks = data.cosine_sim_rank[str(query_id)]
 
-
+    print(f"Query ID: {query_id}")
     print(f"Query Desc: {query_desc}")
     print(f"Relevant Chunks: {relevant_chunks}")
     #print(f"Original Ranked Chunks: {sorted(orig_ranked_chunks)}")
     print(f"Ranked Chunks.        : {ranked_chunks}")
-
+    print(f"Chunks avg sim: {avg_similarity}")
+    """
     topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exp_loops)
     
     _, state_meta, reward, _ = topic.get_initial_step()
@@ -92,6 +95,6 @@ def main():
     pprint(topic, reward, state_meta, 'submit_current_bag')
 
     print(f"Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Actions: {topic.actions_taken}")
-        
+    """
 if __name__ == "__main__":
     main()

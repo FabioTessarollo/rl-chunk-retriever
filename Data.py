@@ -56,6 +56,11 @@ class Data:
                 addtional_chunks.append(prev)
         ranked_chunks.extend(addtional_chunks)
         return ranked_chunks
+    
+    def get_avg_sim(self, query_id):
+        with open(self.cosine_sim_rank_path, 'r', encoding='utf-8') as f:
+            json_data = json.load(f)
+            return json_data[str(query_id)]["avg_similarity"]
 
     def get_page_chunks_dict(self, page_id):
         page = next((page for page in self.pages if page["page_id"] == page_id), None)

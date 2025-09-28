@@ -52,14 +52,19 @@ def main():
             chunk_similarity = get_cosine_sim(chunk_embedding, query_embedding)
             chunks_similarity_dict[chunk_id] = chunk_similarity
 
+        avg_similarity = sum(chunks_similarity_dict.values()) / len(chunks_similarity_dict)
+
         # Sort by similarity, get top_k
         top_chunks = sorted(chunks_similarity_dict.items(), key=lambda x: x[1], reverse=True)[:top_k]
         top_chunk_ids = {chunk_id for chunk_id, _ in top_chunks}
 
+        avg_similarity_top10 = sum(similarity for _, similarity in top_chunks[:10]) / 10
+
         # Store the query info with description and ranked chunks
         cosine_sim_rankings[query_id] = {
             "query_desc": query_desc,
-            "relevant_chunks": [chunk_id for chunk_id, _ in top_chunks]
+            "relevant_chunks": [chunk_id for chunk_id, _ in top_chunks],
+            "avg_similarity": avg_similarity_top10
         }
 
         # Count relevant retrieved

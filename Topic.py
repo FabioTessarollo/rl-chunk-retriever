@@ -18,7 +18,7 @@ actions, and output of the deep Q-learning model (Q-values), to let it explore t
 
 class Topic:
 
-    def __init__(self, query_emb, page_chunks_dict, page_even_chunks_dict, page_odd_chunks_dict, ranked_chunks, relevant_chunks, max_exp_loops):
+    def __init__(self, query_emb, page_chunks_dict, page_even_chunks_dict, page_odd_chunks_dict, ranked_chunks, relevant_chunks, max_exp_loops, avg_sim):
         self.current_rank_chunk = 0 # rank position of the current chunk - to navigate the rank
         self.current_chunk_id = 0 # chunk id value of the current chunk - to navigate the page
         self.query_emb = query_emb
@@ -36,6 +36,7 @@ class Topic:
         self.bag_of_chunks_embedding = torch.zeros(len(query_emb), dtype=torch.float32, device = self.device)
         self.current_loop = 0
         self.max_exp_loops = max_exp_loops
+        self.avg_sim = avg_sim
         self.single_chunk_emb = None
         self.double_chunk_emb = None
         self.skips = 0
@@ -51,10 +52,10 @@ class Topic:
         single_chunk_already_in_bag = int(self.current_chunk_id in self.bag_of_chunks)
         next_chunk_already_in_bag = int(self.current_chunk_id + 1 in self.bag_of_chunks)
         bag_size = len(self.bag_of_chunks) / len(self.ranked_chunks)
-        sq_sim = self.cos_sim_norm(self.single_chunk_emb, self.query_emb)
-        dq_sim = self.cos_sim_norm(self.double_chunk_emb, self.query_emb)
-        bq_sim = self.cos_sim_norm(self.bag_of_chunks_embedding, self.query_emb)
-        state_metadata = torch.tensor([rank_position, remaining_loops, single_chunk_already_in_bag, next_chunk_already_in_bag, bag_size, sq_sim, dq_sim, bq_sim], device = self.device)
+        sq_sim = self.cos_sim_norm(self.single_chunk_emb, self.query_emb) #/ self.avg_sim ) / 2
+        dq_sim = self.cos_sim_norm(self.double_chunk_emb, self.query_emb) #/ self.avg_sim ) / 2
+        bq_sim = self.cos_sim_norm(self.bag_of_chunks_embedding, self.query_emb) #/ self.avg_sim ) / 2
+        state_metadata = torch.tensor([rank_position, remaining_loops, single_chunk_already_in_bag, next_chunk_already_in_bag, bag_size, sq_sim, dq_sim, bq_sim], device = self.device) #, self.avg_sim
         return state_metadata
 
     def get_initial_step(self):
@@ -100,7 +101,7 @@ class Topic:
         self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
 
         if self.current_chunk_id in self.relevant_chunks and self.current_chunk_id not in self.bag_of_chunks:
-            reward = 0#-0.01 #if self.current_loop > 0 else 0 #-0.05 * (self.current_loop + 1)
+            reward = -0.01 # -0.01 #if self.current_loop > 0 else 0 #-0.05 * (self.current_loop + 1)
         else:
             reward = 0 #-0.01 * (self.current_loop + 1)
 
@@ -186,6 +187,7 @@ class Topic:
 
         # compute reward
         both_relevant = c1 in self.relevant_chunks and c2 in self.relevant_chunks
+        one_is_relevant = c1 in self.relevant_chunks or c2 in self.relevant_chunks
         both_not_in_bag = c1 not in self.bag_of_chunks and c2 not in self.bag_of_chunks
         one_not_in_bag = c1 not in self.bag_of_chunks or c2 not in self.bag_of_chunks
         one_wasnt_selected_by_cosine_sim = c1 not in self.ranked_chunks[:10] or c2 not in self.ranked_chunks[:10]
@@ -195,6 +197,10 @@ class Topic:
             reward = 2
         elif both_relevant:
             reward = 0
+        #elif one_is_relevant and both_not_in_bag:
+        #    reward = 1
+        #elif one_is_relevant:
+        #    reward = 0
         else:
             reward = -1
 
