@@ -101,9 +101,9 @@ class Topic:
         self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
 
         if self.current_chunk_id in self.relevant_chunks and self.current_chunk_id not in self.bag_of_chunks:
-            reward = -0.01 # -0.01 #if self.current_loop > 0 else 0 #-0.05 * (self.current_loop + 1)
+            reward = -0.01 # -0.01 #if self.current_loop > 0 else 0 #-0.05 * (self.current_loop + 1) # -1
         else:
-            reward = 0 #-0.01 * (self.current_loop + 1)
+            reward = 0 #-0.01 * (self.current_loop + 1) #+0.1
 
         # restart if last in the rank, else go next
         if self.current_rank_chunk == len(self.ranked_chunks) - 1:
@@ -141,6 +141,9 @@ class Topic:
             reward = 0
         else:
             reward = -1
+        
+        #if self.current_rank_chunk < 4:
+        #    reward += 0.5
 
         # add to bag
         if self.current_chunk_id not in self.bag_of_chunks:
@@ -192,13 +195,13 @@ class Topic:
         one_not_in_bag = c1 not in self.bag_of_chunks or c2 not in self.bag_of_chunks
         one_wasnt_selected_by_cosine_sim = c1 not in self.ranked_chunks[:10] or c2 not in self.ranked_chunks[:10]
         if both_relevant and both_not_in_bag:
-            reward = 3
+            reward = 3 #4
         elif both_relevant and one_not_in_bag:
-            reward = 2
+            reward = 2 #4 forse? provare anche con 2
         elif both_relevant:
             reward = 0
-        #elif one_is_relevant and both_not_in_bag:
-        #    reward = 1
+        #elif one_is_relevant:
+        #    reward = -2
         #elif one_is_relevant:
         #    reward = 0
         else:

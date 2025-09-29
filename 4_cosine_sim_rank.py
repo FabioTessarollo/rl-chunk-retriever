@@ -107,7 +107,7 @@ def main():
     with open(output_file, 'w') as f:
         json.dump(cosine_sim_rankings, f, indent=2)
 
-    print(f"\nCosine similarity rankings saved to: {output_file}")
+    # print(f"\nCosine similarity rankings saved to: {output_file}")
 
 
 if __name__ == "__main__":
