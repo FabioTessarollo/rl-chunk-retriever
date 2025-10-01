@@ -203,7 +203,7 @@ def main():
     per_beta_increment = 0.001  # Beta annealing rate
 
     # Early Stopping
-    es = EarlyStopping(patience=25, delta_ratio=0.01)
+    es = EarlyStopping(patience=30, delta_ratio=0.01)
 
     # Set device to MPS if available (for Apple Silicon acceleration), else CPU
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -387,10 +387,11 @@ def main():
         if avg_val_f1_score > best_score:
             best_score = avg_val_f1_score
             torch.save(online_net.state_dict(), "models/rl-chunk-retriever.pt")
-
-        if es.step(avg_val_f1_score):
-            print(f"Early stopping at epoch {epoch}")
-            break
+        
+        if epoch > 2:
+            if es.step(avg_val_f1_score):
+                print(f"Early stopping at epoch {epoch}")
+                break
 
     extra_logger.info(f"{now_str}\t{proj_dim}\t{gamma}\t{epsilon_min}\t{epsilon_decay}\t{batch_size}\t{replay_capacity}\t{lr}\t{target_update}\t{epochs}\t{max_exp_loops}\t{action_dim}\t{scheduler_type}\t{per_alpha}\t{per_beta}\t{per_beta_increment}\t{dropout_p}\t{best_score:.4f}")
     
