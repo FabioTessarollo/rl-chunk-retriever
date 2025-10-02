@@ -1,0 +1,17 @@
+uv run 6_train.py \
+    --proj_dim 256 \
+    --gamma 0.99 \
+    --epsilon_min 0.01 \
+    --epsilon_decay 0.99995 \
+    --batch_size 64 \
+    --replay_capacity 10000 \
+    --lr 0.0001 \
+    --target_update 200 \
+    --epochs 100 \
+    --max_exp_loops 3 \
+    --action_dim 4 \
+    --dropout_p 0 \
+    --scheduler_type cosine \
+    --per_alpha 0.6 \
+    --per_beta 0.4 \
+    --per_beta_increment 0.001
