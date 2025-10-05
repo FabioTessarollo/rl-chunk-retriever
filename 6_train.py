@@ -198,12 +198,12 @@ def main():
     factor = 0.5  # For ReduceLROnPlateau
 
     # PER hyperparameters
-    per_alpha = 0.6      # Prioritization exponent #0.6 !!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    per_alpha = 0.6      # Prioritization exponent #0.6
     per_beta = 0.4       # Importance sampling correction
     per_beta_increment = 0.001  # Beta annealing rate
 
     # Early Stopping
-    es = EarlyStopping(patience=30, delta_ratio=0.01)
+    es = EarlyStopping(patience=80, delta_ratio=0.001)
 
     # Set device to MPS if available (for Apple Silicon acceleration), else CPU
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -218,7 +218,7 @@ def main():
     if scheduler_type == "step":
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma_scheduler)
     elif scheduler_type == "cosine":
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs-20, eta_min=eta_min)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=eta_min) #tmax epochs - 20  !!!!!!!!!!!!!!!!!!!!!!!!!!!!
     elif scheduler_type == "exponential":
         scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma_scheduler)
     elif scheduler_type == "plateau":

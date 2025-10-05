@@ -70,6 +70,7 @@ def main():
         cosine_sim_rankings[query_id] = {
             "query_desc": query_desc,
             "relevant_chunks": [chunk_id for chunk_id, _ in top_chunks],
+            "similarities": [similarity for _, similarity in top_chunks],
             "avg_similarity": avg_similarity_top10
         }
 

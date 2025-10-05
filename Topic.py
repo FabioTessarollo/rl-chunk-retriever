@@ -86,11 +86,13 @@ class Topic:
 
         if self.current_chunk_id in self.relevant_chunks and self.current_chunk_id not in self.bag_of_chunks:
             reward = -1# -0.01 #if self.current_loop > 0 else 0 #-0.05 * (self.current_loop + 1) # -1
+            if self.current_rank_chunk < 3 and self.current_chunk_id not in self.bag_of_chunks:
+                reward -= 1 - self.current_rank_chunk/3
         else:
             reward = 1 #-0.01 * (self.current_loop + 1) #+0.1
-        
-        if self.current_rank_chunk < 3 and self.current_chunk_id not in self.bag_of_chunks:
-            reward -= 1 - self.current_rank_chunk/3
+
+        # if self.current_rank_chunk < 3 and self.current_chunk_id not in self.bag_of_chunks:
+        #     reward -= 1 - self.current_rank_chunk/3
 
         # restart if last in the rank, else go next
         if self.current_rank_chunk == len(self.ranked_chunks) - 1:

@@ -20,7 +20,7 @@ def evaluate_with_threshold(data, query_ids, threshold, device):
     for query_id in query_ids:
         query = data.get_query_obj_from_id(query_id)
         page_id = query.get("page_id")
-        page, _, _ = data.get_page_chunks_dict(page_id)
+        page, page_even, page_odd = data.get_page_chunks_dict(page_id)
         query_embedding = torch.tensor(query.get("query")).to(device)
         relevant_chunks = set(query.get("relevant_chunks"))
         
@@ -30,6 +30,20 @@ def evaluate_with_threshold(data, query_ids, threshold, device):
             chunk_similarity = get_cosine_sim(chunk_embedding, query_embedding)
             if chunk_similarity >= threshold:
                 selected_chunks.add(chunk_id)
+        
+        # even
+        for chunk_id, chunk_embedding in page_even.items():
+            chunk_similarity = get_cosine_sim(chunk_embedding, query_embedding)
+            if chunk_similarity >= threshold:
+                selected_chunks.add(chunk_id)
+                selected_chunks.add(chunk_id + 1)
+
+        # odd
+        for chunk_id, chunk_embedding in page_odd.items():
+            chunk_similarity = get_cosine_sim(chunk_embedding, query_embedding)
+            if chunk_similarity >= threshold:
+                selected_chunks.add(chunk_id)
+                selected_chunks.add(chunk_id + 1)
         
         # Count relevant retrieved
         num_relevant_retrieved = len(selected_chunks & relevant_chunks)
@@ -77,31 +91,61 @@ def find_optimal_threshold(data, training_query_ids, device, threshold_range=(0.
 def get_rankings_with_threshold(data, query_ids, threshold, device, n_examples=2):
     """Get rankings for queries using the specified threshold"""
     rankings = {}
+    rankings_even = {}
+    rankings_odd = {}
     example_query_ids = set(random.sample(query_ids, min(n_examples, len(query_ids))))
     
     for query_id in query_ids:
         query = data.get_query_obj_from_id(query_id)
         page_id = query.get("page_id")
         query_desc = query.get("query_desc")
-        page, _, _ = data.get_page_chunks_dict(page_id)
+        page, page_even, page_odd = data.get_page_chunks_dict(page_id)
         query_embedding = torch.tensor(query.get("query")).to(device)
         relevant_chunks = set(query.get("relevant_chunks"))
         
-        # Calculate similarities and filter by threshold
+        # Calculate similarities for single chunks
         chunks_similarity_dict = {}
         for chunk_id, chunk_embedding in page.items():
             chunk_similarity = get_cosine_sim(chunk_embedding, query_embedding)
             if chunk_similarity >= threshold:
                 chunks_similarity_dict[chunk_id] = chunk_similarity
+
+        # Calculate similarities for double paired even chunks
+        chunks_similarity_dict_even_pairs = {}
+        for chunk_id, chunk_embedding in page_even.items():
+            chunk_similarity = get_cosine_sim(chunk_embedding, query_embedding)
+            if chunk_similarity >= threshold:
+                chunks_similarity_dict_even_pairs[chunk_id] = chunk_similarity
+
+        # Calculate similarities for double paired odd chunks
+        chunks_similarity_dict_odd_pairs = {}
+        for chunk_id, chunk_embedding in page_odd.items():
+            chunk_similarity = get_cosine_sim(chunk_embedding, query_embedding)
+            if chunk_similarity >= threshold:
+                chunks_similarity_dict_odd_pairs[chunk_id] = chunk_similarity
         
         # Sort by similarity
         top_chunks = sorted(chunks_similarity_dict.items(), key=lambda x: x[1], reverse=True)
+        top_chunks_even = sorted(chunks_similarity_dict_even_pairs.items(), key=lambda x: x[1], reverse=True)
+        top_chunks_odd = sorted(chunks_similarity_dict_odd_pairs.items(), key=lambda x: x[1], reverse=True)
         
         # Store the query info
         rankings[query_id] = {
             "query_desc": query_desc,
             "threshold": threshold,
             "relevant_chunks": [chunk_id for chunk_id, _ in top_chunks]
+        }
+
+        rankings_even[query_id] = {
+            "query_desc": query_desc,
+            "threshold": threshold,
+            "relevant_chunks": [chunk_id for chunk_id, _ in top_chunks_even]
+        }
+
+        rankings_odd[query_id] = {
+            "query_desc": query_desc,
+            "threshold": threshold,
+            "relevant_chunks": [chunk_id for chunk_id, _ in top_chunks_odd]
         }
         
         # Print example if query_id was selected
@@ -116,7 +160,7 @@ def get_rankings_with_threshold(data, query_ids, threshold, device, n_examples=2
             print(f"Retrieved chunks: {[chunk_id for chunk_id, _ in top_chunks]}")
             print(f"Relevant retrieved: {num_relevant_retrieved}/{len(relevant_chunks)}")
     
-    return rankings
+    return rankings, rankings_even, rankings_odd
 
 def main():
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
