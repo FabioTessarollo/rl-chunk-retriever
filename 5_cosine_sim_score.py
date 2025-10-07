@@ -68,7 +68,7 @@ def evaluate_with_threshold(data, query_ids, threshold, device):
     
     return avg_recall, avg_precision, avg_f1_score
 
-def find_optimal_threshold(data, training_query_ids, device, threshold_range=(0.75, 0.85), step=0.01):
+def find_optimal_threshold(data, training_query_ids, device, threshold_range=(0.77, 0.83), step=0.01):
     """Find the optimal cosine similarity threshold using training data"""
     best_threshold = 0.0
     best_f1_score = 0.0
@@ -88,11 +88,11 @@ def find_optimal_threshold(data, training_query_ids, device, threshold_range=(0.
     print(f"\nBest threshold: {best_threshold:.3f} with F1: {best_f1_score:.4f}")
     return best_threshold
 
-def get_rankings_with_threshold(data, query_ids, threshold, device, n_examples=2):
+def get_rankings_with_threshold(data, query_ids, threshold, device, top_k, n_examples=2):
     """Get rankings for queries using the specified threshold"""
     rankings = {}
-    rankings_even = {}
-    rankings_odd = {}
+    single_similarities = {}
+    double_similarities = {}
     example_query_ids = set(random.sample(query_ids, min(n_examples, len(query_ids))))
     
     for query_id in query_ids:
@@ -102,6 +102,9 @@ def get_rankings_with_threshold(data, query_ids, threshold, device, n_examples=2
         page, page_even, page_odd = data.get_page_chunks_dict(page_id)
         query_embedding = torch.tensor(query.get("query")).to(device)
         relevant_chunks = set(query.get("relevant_chunks"))
+
+        global_min = 1
+        global_max = 0
         
         # Calculate similarities for single chunks
         chunks_similarity_dict = {}
@@ -109,6 +112,10 @@ def get_rankings_with_threshold(data, query_ids, threshold, device, n_examples=2
             chunk_similarity = get_cosine_sim(chunk_embedding, query_embedding)
             if chunk_similarity >= threshold:
                 chunks_similarity_dict[chunk_id] = chunk_similarity
+                if chunk_similarity < global_min:
+                    global_min = chunk_similarity
+                if chunk_similarity > global_max:
+                    global_max = chunk_similarity
 
         # Calculate similarities for double paired even chunks
         chunks_similarity_dict_even_pairs = {}
@@ -116,6 +123,10 @@ def get_rankings_with_threshold(data, query_ids, threshold, device, n_examples=2
             chunk_similarity = get_cosine_sim(chunk_embedding, query_embedding)
             if chunk_similarity >= threshold:
                 chunks_similarity_dict_even_pairs[chunk_id] = chunk_similarity
+                if chunk_similarity < global_min:
+                    global_min = chunk_similarity
+                if chunk_similarity > global_max:
+                    global_max = chunk_similarity
 
         # Calculate similarities for double paired odd chunks
         chunks_similarity_dict_odd_pairs = {}
@@ -123,44 +134,59 @@ def get_rankings_with_threshold(data, query_ids, threshold, device, n_examples=2
             chunk_similarity = get_cosine_sim(chunk_embedding, query_embedding)
             if chunk_similarity >= threshold:
                 chunks_similarity_dict_odd_pairs[chunk_id] = chunk_similarity
-        
-        # Sort by similarity
-        top_chunks = sorted(chunks_similarity_dict.items(), key=lambda x: x[1], reverse=True)
-        top_chunks_even = sorted(chunks_similarity_dict_even_pairs.items(), key=lambda x: x[1], reverse=True)
-        top_chunks_odd = sorted(chunks_similarity_dict_odd_pairs.items(), key=lambda x: x[1], reverse=True)
+                if chunk_similarity < global_min:
+                    global_min = chunk_similarity
+                if chunk_similarity > global_max:
+                    global_max = chunk_similarity
+
+        range_similarity = global_max - global_min
+
+        # merge base dict
+        merged = {
+            k: max(
+                chunks_similarity_dict.get(k, float('-inf')),
+                chunks_similarity_dict_even_pairs.get(k, float('-inf')),
+                chunks_similarity_dict_odd_pairs.get(k, float('-inf'))
+            )
+            for k in (
+                set(chunks_similarity_dict)
+                | set(chunks_similarity_dict_even_pairs)
+                | set(chunks_similarity_dict_odd_pairs)
+            )
+        }
+
+        # sort by similarity
+        top_chunks = dict(sorted(merged.items(), key=lambda x: x[1], reverse=True)[:top_k])
         
         # Store the query info
         rankings[query_id] = {
             "query_desc": query_desc,
-            "threshold": threshold,
-            "relevant_chunks": [chunk_id for chunk_id, _ in top_chunks]
+            "relevant_chunks": [chunk_id for chunk_id, _ in top_chunks.items()]
         }
 
-        rankings_even[query_id] = {
+        single_similarities[query_id] = {
             "query_desc": query_desc,
-            "threshold": threshold,
-            "relevant_chunks": [chunk_id for chunk_id, _ in top_chunks_even]
+            "similarities": {k: (v - global_min) / range_similarity for k, v in chunks_similarity_dict.items()}
         }
 
-        rankings_odd[query_id] = {
+        double_similarities[query_id] = {
             "query_desc": query_desc,
-            "threshold": threshold,
-            "relevant_chunks": [chunk_id for chunk_id, _ in top_chunks_odd]
+            "similarities": {k: (v - global_min) / range_similarity for k, v in (chunks_similarity_dict_even_pairs | chunks_similarity_dict_odd_pairs).items()}
         }
-        
+
         # Print example if query_id was selected
         if query_id in example_query_ids:
-            selected_chunk_ids = {chunk_id for chunk_id, _ in top_chunks}
+            selected_chunk_ids = {chunk_id for chunk_id, _ in top_chunks.items()}
             num_relevant_retrieved = len(selected_chunk_ids & relevant_chunks)
             
             print(f"\nExample for Query ID: {query_id}")
             print(f"Query Description: {query_desc}")
             print(f"Threshold: {threshold:.3f}")
             print(f"Relevant chunks: {sorted(list(relevant_chunks))}")
-            print(f"Retrieved chunks: {[chunk_id for chunk_id, _ in top_chunks]}")
+            print(f"Retrieved chunks: {[chunk_id for chunk_id, _ in top_chunks.items()]}")
             print(f"Relevant retrieved: {num_relevant_retrieved}/{len(relevant_chunks)}")
     
-    return rankings, rankings_even, rankings_odd
+    return rankings, single_similarities, double_similarities
 
 def main():
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -168,7 +194,7 @@ def main():
     pages_doub_even_path = "data_chunks_emb/pages_doub_chunked_even.json"
     pages_doub_odd_path = "data_chunks_emb/pages_doub_chunked_odd.json"
     relevant_path = "data_chunks_emb/relevant_chunks_emb.json"
-    cosine_sim_path = "data_chunks_cos_sim/cosine_sim_rank.json"
+    cosine_sim_path = "data_chunks_cos_sim/cosine_sim_rank_threshold.json"
 
     data = Data(pages_path, relevant_path, pages_doub_even_path, pages_doub_odd_path, cosine_sim_path)
     data.load_pages()
@@ -207,16 +233,26 @@ def main():
     
     # Get rankings for all queries using optimal threshold
     print(f"\nGenerating rankings with optimal threshold...")
-    all_rankings = get_rankings_with_threshold(data, data.query_ids, optimal_threshold, device, n_examples)
+    top_k = 40
+    threshold = 0.77
+    all_rankings, single_similarities, double_similarities = get_rankings_with_threshold(data, data.query_ids, threshold, device, top_k,n_examples)
     
     # Create output directory if it doesn't exist
     output_dir = "data_chunks_cos_sim"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Save the rankings to JSON file
+    # Save to JSON files
     output_file = os.path.join(output_dir, "cosine_sim_rank_threshold.json")
     with open(output_file, 'w') as f:
         json.dump(all_rankings, f, indent=2)
+
+    output_file = os.path.join(output_dir, "single_similarities.json")
+    with open(output_file, 'w') as f:
+        json.dump(single_similarities, f, indent=2)
+
+    output_file = os.path.join(output_dir, "double_similarities.json")
+    with open(output_file, 'w') as f:
+        json.dump(double_similarities, f, indent=2)
 
     # Save results summary
     results = {
@@ -238,9 +274,6 @@ def main():
     results_file = os.path.join(output_dir, "threshold_optimization_results.json")
     with open(results_file, 'w') as f:
         json.dump(results, f, indent=2)
-    
-    print(f"\nRankings saved to: {output_file}")
-    print(f"Results summary saved to: {results_file}")
 
 
 if __name__ == "__main__":

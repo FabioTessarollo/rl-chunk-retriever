@@ -64,7 +64,7 @@ def main():
         top_chunks = sorted(filtered_chunks, key=lambda x: x[1], reverse=True)[:top_k]
         top_chunk_ids = {chunk_id for chunk_id, _ in top_chunks}
 
-        avg_similarity_top10 = sum(similarity for _, similarity in top_chunks[:10]) / 10
+        avg_similarity_top10 = sum(similarity for _, similarity in top_chunks)
 
         # Store the query info with description and ranked chunks
         cosine_sim_rankings[query_id] = {
