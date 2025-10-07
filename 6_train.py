@@ -82,10 +82,10 @@ def evaluate_on_validation(data, validation_set, online_net, device, max_exp_loo
         relevant_chunks = query.get("relevant_chunks")
         ranked_chunks = data.cosine_sim_rank[str(query_id)]
         query_desc = query.get("query_desc")
-        #single_sims = data.get_sims_single_from_query_id(query_id)
-        #double_sims = data.get_sims_double_from_query_id(query_id)
+        single_sims = data.get_sims_single_from_query_id(query_id)
+        double_sims = data.get_sims_double_from_query_id(query_id)
 
-        topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exp_loops)#, single_sims, double_sims)
+        topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exp_loops, single_sims, double_sims)
 
         state_emb, state_meta, _, _ = topic.get_initial_step()
         state_emb = state_emb.to(device)
@@ -136,18 +136,18 @@ def main():
     pages_doub_even_path = "data_chunks_emb/pages_doub_chunked_even.json"
     pages_doub_odd_path = "data_chunks_emb/pages_doub_chunked_odd.json"
     relevant_path = "data_chunks_emb/relevant_chunks_emb.json"
-    cosine_sim_path = "data_chunks_cos_sim/cosine_sim_rank.json" #_threshold
+    cosine_sim_path = "data_chunks_cos_sim/cosine_sim_rank_threshold.json" #_threshold
     single_similarities = "data_chunks_cos_sim/single_similarities.json"
     double_similarities = "data_chunks_cos_sim/double_similarities.json"
 
-    data = Data(pages_path, relevant_path, pages_doub_even_path, pages_doub_odd_path, cosine_sim_path)#, single_similarities, double_similarities)
+    data = Data(pages_path, relevant_path, pages_doub_even_path, pages_doub_odd_path, cosine_sim_path, single_similarities, double_similarities)
     data.load_pages()
     data.load_pages_even()
     data.load_pages_odd()
     data.load_relevant()
     data.load_cosine_sim()
-    #data.load_single_sims()
-    #data.load_double_sims()
+    data.load_single_sims()
+    data.load_double_sims()
 
     fair_query_ids, superdifficult_query_ids = data.get_query_ids_by_difficulty()
 
@@ -264,10 +264,10 @@ def main():
             query_desc = query.get("query_desc")
             relevant_chunks = query.get("relevant_chunks")
             ranked_chunks = data.get_ranked_with_prev_chunks_from_query_id(query_id)
-            #single_sims = data.get_sims_single_from_query_id(query_id)
-            #double_sims = data.get_sims_double_from_query_id(query_id)
+            single_sims = data.get_sims_single_from_query_id(query_id)
+            double_sims = data.get_sims_double_from_query_id(query_id)
 
-            topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exp_loops)#, single_sims, double_sims)
+            topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exp_loops, single_sims, double_sims)
 
             state_emb, state_meta, _, _ = topic.get_initial_step()
             state_emb = state_emb.to(device)

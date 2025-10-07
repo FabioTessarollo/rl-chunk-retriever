@@ -37,9 +37,9 @@ class Topic:
         single_chunk_already_in_bag = int(self.current_chunk_id in self.bag_of_chunks)
         next_chunk_already_in_bag = int(self.current_chunk_id + 1 in self.bag_of_chunks)
         bag_size = len(self.bag_of_chunks) / len(self.ranked_chunks)
-        sq_sim = (self.cos_sim_norm(self.single_chunk_emb, self.query_emb) - 0.75) / 0.25 #/ self.avg_sim ) / 2self.single_sims.get(str(self.current_chunk_id), 0)
-        dq_sim = (self.cos_sim_norm(self.double_chunk_emb, self.query_emb) - 0.75) / 0.25#self.double_sims.get(str(self.current_chunk_id), 0) #/ self.avg_sim ) / 2
-        bq_sim = (self.cos_sim_norm(self.bag_of_chunks_embedding, self.query_emb) - 0.75) / 0.25 #/ self.avg_sim ) / 2
+        sq_sim = self.single_sims.get(str(self.current_chunk_id), 0)#(self.cos_sim_norm(self.single_chunk_emb, self.query_emb) - 0.75) / 0.25 
+        dq_sim = self.double_sims.get(str(self.current_chunk_id), 0)#(self.cos_sim_norm(self.double_chunk_emb, self.query_emb) - 0.75) / 0.25 
+        bq_sim = (self.cos_sim_norm(self.bag_of_chunks_embedding, self.query_emb) - 0.75) / 0.25 
         state_metadata = torch.tensor([rank_position, remaining_loops, single_chunk_already_in_bag, next_chunk_already_in_bag, bag_size, sq_sim, dq_sim, bq_sim], device = self.device) #, self.avg_sim
         return state_metadata
 
