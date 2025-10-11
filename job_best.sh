@@ -1,5 +1,3 @@
-
-# and set reward in case of not skip of top 3 even if the chunk is rel
 uv run 6_train.py \
     --proj_dim 512 \
     --gamma 0.99 \
@@ -7,8 +5,8 @@ uv run 6_train.py \
     --epsilon_decay 0.99995 \
     --batch_size 128 \
     --replay_capacity 10000 \
-    --lr 0.00005 \
-    --target_update 300 \
+    --lr 0.00001 \
+    --target_update 1000 \
     --epochs 100 \
     --max_exp_loops 3 \
     --action_dim 4 \
