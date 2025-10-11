@@ -6,12 +6,14 @@ from collections import defaultdict
 
 class Data:
 
-    def __init__(self, pages_path, relevant_path, pages_doub_even_path, pages_doub_odd_path, cosine_sim_rank_path = None):
+    def __init__(self, pages_path, relevant_path, pages_doub_even_path, pages_doub_odd_path, cosine_sim_rank_path = None, single_similarities_path = None, double_similarities_path = None):
         self.pages_path = pages_path
         self.relevant_path = relevant_path
         self.cosine_sim_rank_path = cosine_sim_rank_path
         self.pages_doub_even_path = pages_doub_even_path
         self.pages_doub_odd_path = pages_doub_odd_path
+        self.single_similarities_path = single_similarities_path
+        self.double_similarities_path = double_similarities_path
         self.device = torch.device("mps")
         self.cosine_sim_rank_wb = {}
 
@@ -33,19 +35,28 @@ class Data:
     def load_relevant(self):
         with open(self.relevant_path, 'r', encoding='utf-8') as f:
             self.relevant = json.load(f)
-
-            # remove objects with empty "relevant_chunks" (2/535 were found)
-            # self.relevant = [
-            #     query for query in self.relevant 
-            #     if query.get("relevant_chunks")
-            # ]
-
             self.query_ids = [query['query_id'] for query in self.relevant]
+
+    def load_single_sims(self):
+        with open(self.single_similarities_path, 'r', encoding='utf-8') as f:
+            self.single_similarities = json.load(f)
+
+    def load_double_sims(self):
+        with open(self.double_similarities_path, 'r', encoding='utf-8') as f:
+            self.double_similarities = json.load(f)
 
     def load_cosine_sim(self):
         with open(self.cosine_sim_rank_path, 'r', encoding='utf-8') as f:
             self.cosine_sim_rank = json.load(f)
             self.cosine_sim_rank = {k: v['relevant_chunks'] for k, v in self.cosine_sim_rank.items() if v}
+
+    def get_sims_single_from_query_id(self, query_id):
+        sims = self.single_similarities[str(query_id)]
+        return sims["similarities"]
+    
+    def get_sims_double_from_query_id(self, query_id):
+        sims = self.double_similarities[str(query_id)]
+        return sims["similarities"]
 
     def get_ranked_with_prev_chunks_from_query_id(self, query_id):
         ranked_chunks = self.cosine_sim_rank[str(query_id)]
@@ -56,6 +67,11 @@ class Data:
                 addtional_chunks.append(prev)
         ranked_chunks.extend(addtional_chunks)
         return ranked_chunks
+    
+    def get_avg_sim(self, query_id):
+        with open(self.cosine_sim_rank_path, 'r', encoding='utf-8') as f:
+            json_data = json.load(f)
+            return json_data[str(query_id)]["avg_similarity"]
 
     def get_page_chunks_dict(self, page_id):
         page = next((page for page in self.pages if page["page_id"] == page_id), None)

@@ -1,24 +1,8 @@
 import torch
 
-"""
- state, and input of the deep Q-learning model:
- - embedding: current_chunk 
- - embedding: current_bag_of_selected_chunks (computed as the mean embedding of the selected chunks)
- - embedding: query
- - list: metadata
-
-actions, and output of the deep Q-learning model (Q-values), to let it explore the cosine similarity rank:
- - get_next_chunk_in_rank
- - get_prev_chunk_in_rank
- - get_fw_extended_chunk (current chunk and next in the page, embedded together)
- - get_bw_extended_chunk (current chunk and previous in the page, embedding together)
- - add_chunk_to_bag
- - submit_current_bag
- """
-
 class Topic:
 
-    def __init__(self, query_emb, page_chunks_dict, page_even_chunks_dict, page_odd_chunks_dict, ranked_chunks, relevant_chunks, max_exp_loops):
+    def __init__(self, query_emb, page_chunks_dict, page_even_chunks_dict, page_odd_chunks_dict, ranked_chunks, relevant_chunks, max_exp_loops, single_sims=None, double_sims=None):
         self.current_rank_chunk = 0 # rank position of the current chunk - to navigate the rank
         self.current_chunk_id = 0 # chunk id value of the current chunk - to navigate the page
         self.query_emb = query_emb
@@ -36,6 +20,8 @@ class Topic:
         self.bag_of_chunks_embedding = torch.zeros(len(query_emb), dtype=torch.float32, device = self.device)
         self.current_loop = 0
         self.max_exp_loops = max_exp_loops
+        self.single_sims = single_sims
+        self.double_sims = double_sims
         self.single_chunk_emb = None
         self.double_chunk_emb = None
         self.skips = 0
@@ -51,10 +37,10 @@ class Topic:
         single_chunk_already_in_bag = int(self.current_chunk_id in self.bag_of_chunks)
         next_chunk_already_in_bag = int(self.current_chunk_id + 1 in self.bag_of_chunks)
         bag_size = len(self.bag_of_chunks) / len(self.ranked_chunks)
-        sq_sim = self.cos_sim_norm(self.single_chunk_emb, self.query_emb)
-        dq_sim = self.cos_sim_norm(self.double_chunk_emb, self.query_emb)
-        bq_sim = self.cos_sim_norm(self.bag_of_chunks_embedding, self.query_emb)
-        state_metadata = torch.tensor([rank_position, remaining_loops, single_chunk_already_in_bag, next_chunk_already_in_bag, bag_size, sq_sim, dq_sim, bq_sim], device = self.device)
+        sq_sim = (self.cos_sim_norm(self.single_chunk_emb, self.query_emb) - 0.75) / 0.25 #/ self.avg_sim ) / 2self.single_sims.get(str(self.current_chunk_id), 0)
+        dq_sim = (self.cos_sim_norm(self.double_chunk_emb, self.query_emb) - 0.75) / 0.25#self.double_sims.get(str(self.current_chunk_id), 0) #/ self.avg_sim ) / 2
+        bq_sim = (self.cos_sim_norm(self.bag_of_chunks_embedding, self.query_emb) - 0.75) / 0.25 #/ self.avg_sim ) / 2
+        state_metadata = torch.tensor([rank_position, remaining_loops, single_chunk_already_in_bag, next_chunk_already_in_bag, bag_size, sq_sim, dq_sim, bq_sim], device = self.device) #, self.avg_sim
         return state_metadata
 
     def get_initial_step(self):
@@ -100,9 +86,14 @@ class Topic:
         self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
 
         if self.current_chunk_id in self.relevant_chunks and self.current_chunk_id not in self.bag_of_chunks:
-            reward = 0#-0.01 #if self.current_loop > 0 else 0 #-0.05 * (self.current_loop + 1)
+            reward = -1# -0.01 #if self.current_loop > 0 else 0 #-0.05 * (self.current_loop + 1) # -1
+            #if self.current_rank_chunk < 3 and self.current_chunk_id not in self.bag_of_chunks:
+            #    reward -= 1 - self.current_rank_chunk/3
         else:
-            reward = 0 #-0.01 * (self.current_loop + 1)
+            reward = 1 #-0.01 * (self.current_loop + 1) #+0.1
+
+        if self.current_rank_chunk < 3 and self.current_chunk_id not in self.bag_of_chunks:
+            reward -= 1 - self.current_rank_chunk/3
 
         # restart if last in the rank, else go next
         if self.current_rank_chunk == len(self.ranked_chunks) - 1:
@@ -140,6 +131,9 @@ class Topic:
             reward = 0
         else:
             reward = -1
+        
+        if self.current_rank_chunk < 3 and self.current_chunk_id not in self.bag_of_chunks:
+            reward += 1 - self.current_rank_chunk/3
 
         # add to bag
         if self.current_chunk_id not in self.bag_of_chunks:
@@ -163,7 +157,7 @@ class Topic:
         # self.set_f1_score()
         # reward = self.f1_score - before_f1_score
 
-        return (state_embedding, state_metadata, reward, self.done)
+        return (state_embedding, state_metadata, reward/10, self.done)
     
     def take_double(self):
 
@@ -186,15 +180,20 @@ class Topic:
 
         # compute reward
         both_relevant = c1 in self.relevant_chunks and c2 in self.relevant_chunks
+        one_is_relevant = c1 in self.relevant_chunks or c2 in self.relevant_chunks
         both_not_in_bag = c1 not in self.bag_of_chunks and c2 not in self.bag_of_chunks
         one_not_in_bag = c1 not in self.bag_of_chunks or c2 not in self.bag_of_chunks
         one_wasnt_selected_by_cosine_sim = c1 not in self.ranked_chunks[:10] or c2 not in self.ranked_chunks[:10]
         if both_relevant and both_not_in_bag:
-            reward = 3
+            reward = 4 #4
         elif both_relevant and one_not_in_bag:
-            reward = 2
+            reward = 2 #4 forse? provare anche con 2
         elif both_relevant:
             reward = 0
+        #elif one_is_relevant and one_not_in_bag:
+        #    reward = 0.5
+        #elif one_is_relevant:
+        #    reward = 0
         else:
             reward = -1
 
@@ -222,7 +221,7 @@ class Topic:
         # self.set_f1_score()
         # reward = self.f1_score - before_f1_score
 
-        return (state_embedding, state_metadata, reward, self.done)
+        return (state_embedding, state_metadata, reward/10, self.done)
 
     def submit_current_bag(self):
 
@@ -241,4 +240,4 @@ class Topic:
         state_embedding = self.get_state_embedding()
         state_metadata = self.get_state_metadata()
 
-        return (state_embedding, state_metadata, reward, self.done)
+        return (state_embedding, state_metadata, reward/10, self.done)

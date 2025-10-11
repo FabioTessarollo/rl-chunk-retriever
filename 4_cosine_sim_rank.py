@@ -16,7 +16,7 @@ def main():
     pages_doub_even_path = "data_chunks_emb/pages_doub_chunked_even.json"
     pages_doub_odd_path = "data_chunks_emb/pages_doub_chunked_odd.json"
     relevant_path = "data_chunks_emb/relevant_chunks_emb.json"
-    top_k = 30  # there are 3.5 relevant chunks per query on avg in fold 1
+    top_k = 40  # there are 3.5 relevant chunks per query on avg in fold 1
     n_examples = 2
 
     data = Data(pages_path, relevant_path, pages_doub_even_path, pages_doub_odd_path)
@@ -52,14 +52,26 @@ def main():
             chunk_similarity = get_cosine_sim(chunk_embedding, query_embedding)
             chunks_similarity_dict[chunk_id] = chunk_similarity
 
+        avg_similarity = sum(chunks_similarity_dict.values()) / len(chunks_similarity_dict)
+
+        filtered_chunks = [
+            (chunk_id, similarity) 
+            for chunk_id, similarity in chunks_similarity_dict.items() 
+            if similarity > 0.77
+        ]
+
         # Sort by similarity, get top_k
-        top_chunks = sorted(chunks_similarity_dict.items(), key=lambda x: x[1], reverse=True)[:top_k]
+        top_chunks = sorted(filtered_chunks, key=lambda x: x[1], reverse=True)[:top_k]
         top_chunk_ids = {chunk_id for chunk_id, _ in top_chunks}
+
+        avg_similarity_top10 = sum(similarity for _, similarity in top_chunks)
 
         # Store the query info with description and ranked chunks
         cosine_sim_rankings[query_id] = {
             "query_desc": query_desc,
-            "relevant_chunks": [chunk_id for chunk_id, _ in top_chunks]
+            "relevant_chunks": [chunk_id for chunk_id, _ in top_chunks],
+            "similarities": [similarity for _, similarity in top_chunks],
+            "avg_similarity": avg_similarity_top10
         }
 
         # Count relevant retrieved
@@ -102,7 +114,7 @@ def main():
     with open(output_file, 'w') as f:
         json.dump(cosine_sim_rankings, f, indent=2)
 
-    print(f"\nCosine similarity rankings saved to: {output_file}")
+    # print(f"\nCosine similarity rankings saved to: {output_file}")
 
 
 if __name__ == "__main__":
