@@ -84,10 +84,11 @@ def process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chu
         json.dump(relevant_output, out, ensure_ascii=False, indent=2)
 
 def main():
-    pages_path = 'data_extract/pages.jsonl'
-    relevant_path = 'data_extract/relevant_paragraphs.jsonl'
-    pages_out_path = 'data_chunks/pages_chunked.json'
-    relevant_out_path = 'data_chunks/relevant_chunks.json'
+    set = 'train'
+    pages_path = f'data_extract/pages_{set}.jsonl'
+    relevant_path = f'data_extract/relevant_paragraphs_{set}.jsonl'
+    pages_out_path = f'data_chunks/pages_chunked_{set}.json'
+    relevant_out_path = f'data_chunks/relevant_chunks_{set}.json'
     chunk_size = 100
 
     os.makedirs('data_chunks', exist_ok=True)

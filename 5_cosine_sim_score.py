@@ -189,12 +189,13 @@ def get_rankings_with_threshold(data, query_ids, threshold, device, top_k, n_exa
     return rankings, single_similarities, double_similarities
 
 def main():
+    set = 'train'
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-    pages_path = "data_chunks_emb/pages_chunked_emb.json"
-    pages_doub_even_path = "data_chunks_emb/pages_doub_chunked_even.json"
-    pages_doub_odd_path = "data_chunks_emb/pages_doub_chunked_odd.json"
-    relevant_path = "data_chunks_emb/relevant_chunks_emb.json"
-    cosine_sim_path = "data_chunks_cos_sim/cosine_sim_rank_threshold.json"
+    pages_path = f"data_chunks_emb/pages_chunked_emb_{set}.json"
+    pages_doub_even_path = f"data_chunks_emb/pages_doub_chunked_even_{set}.json"
+    pages_doub_odd_path = f"data_chunks_emb/pages_doub_chunked_odd_{set}.json"
+    relevant_path = f"data_chunks_emb/relevant_chunks_emb_{set}.json"
+    cosine_sim_path = f"data_chunks_cos_sim/cosine_sim_rank_threshold_{set}.json"
 
     data = Data(pages_path, relevant_path, pages_doub_even_path, pages_doub_odd_path, cosine_sim_path)
     data.load_pages()

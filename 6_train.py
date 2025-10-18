@@ -198,8 +198,8 @@ def main():
     # Scheduler hyperparameters
     step_size = 10  # For StepLR
     gamma_scheduler = 0.9  # For StepLR and ExponentialLR
-    eta_min = 1e-5  # For CosineAnnealingLR
-    patience = 5  # For ReduceLROnPlateau #5 
+    eta_min = 0.000001  # For CosineAnnealingLR 1e-5
+    patience = 7  # For ReduceLROnPlateau #5 
     factor = 0.5  # For ReduceLROnPlateau
 
     # PER hyperparameters
@@ -229,6 +229,10 @@ def main():
     elif scheduler_type == "plateau":
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=factor, 
                                                        patience=patience)
+    elif scheduler_type == "dedicated":
+        factor = 0.75
+        epoch_start = 96
+        scheduler = ''
       
     replay = PrioritizedReplayBuffer(
         capacity=replay_capacity, 
@@ -387,6 +391,10 @@ def main():
         if scheduler is not None:
             if scheduler_type == "plateau":
                 scheduler.step(avg_val_f1_score)
+            elif scheduler_type == "dedicated":
+                if epoch >= epoch_start:
+                    for param_group in optimizer.param_groups:
+                        param_group['lr'] *= factor
             else:
                 scheduler.step()
 

@@ -142,24 +142,25 @@ def process_fold(fold_idx, all_pages, all_queries, set, folds = False):
 # --- Main execution ---
 all_pages = []
 all_queries = []
+set = 'train'
 
 # for fold in range(5):
 #     process_fold(fold, all_pages, all_queries, 'train', True)
 
-process_fold(0, all_pages, all_queries, 'train', False)
+process_fold(0, all_pages, all_queries, set, False)
 
 # Ensure output directory exists
 os.makedirs("data_extract", exist_ok=True)
 
 # Write combined pages.jsonl
-pages_output = "data_extract/pages.jsonl"
+pages_output = f"data_extract/pages_{set}.jsonl"
 with open(pages_output, 'w', encoding='utf-8') as pages_file:
     for entry in all_pages:
         pages_file.write(json.dumps(entry) + "\n")
 print(f"\nExported {len(all_pages)} total pages to {pages_output}")
 
 # Write combined relevant_paragraphs.jsonl
-queries_output = "data_extract/relevant_paragraphs.jsonl"
+queries_output = f"data_extract/relevant_paragraphs_{set}.jsonl"
 with open(queries_output, 'w', encoding='utf-8') as queries_file:
     for entry in all_queries:
         queries_file.write(json.dumps(entry) + "\n")

@@ -117,18 +117,19 @@ def embed_merged_chunks(input_path, output_path_even, output_path_odd, model):
 
 
 def main():
+    set = 'train'
     model_name = 'intfloat/e5-base-v2'
     print(f'Loading model {model_name}...')
     model = SentenceTransformer(model_name) # this is already doing L2 Norm
 
-    pages_in = 'data_chunks/pages_chunked.json'
-    pages_out = 'data_chunks_emb/pages_chunked_emb.json'
-    rels_in = 'data_chunks/relevant_chunks.json'
-    rels_out = 'data_chunks_emb/relevant_chunks_emb.json'
+    pages_in = f'data_chunks/pages_chunked_{set}.json'
+    pages_out = f'data_chunks_emb/pages_chunked_emb_{set}.json'
+    rels_in = f'data_chunks/relevant_chunks_{set}.json'
+    rels_out = f'data_chunks_emb/relevant_chunks_emb_{set}.json'
     
     # New output paths for merged chunks
-    pages_doub_even_out = 'data_chunks_emb/pages_doub_chunked_even.json'
-    pages_doub_odd_out = 'data_chunks_emb/pages_doub_chunked_odd.json'
+    pages_doub_even_out = f'data_chunks_emb/pages_doub_chunked_even_{set}.json'
+    pages_doub_odd_out = f'data_chunks_emb/pages_doub_chunked_odd_{set}.json'
 
     embed_pages(pages_in, pages_out, model)
     embed_relevant(rels_in, rels_out, model)
