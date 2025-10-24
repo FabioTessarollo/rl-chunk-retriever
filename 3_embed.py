@@ -117,7 +117,7 @@ def embed_merged_chunks(input_path, output_path_even, output_path_odd, model):
 
 
 def main():
-    set = 'train'
+    set = 'test'
     model_name = 'intfloat/e5-base-v2'
     print(f'Loading model {model_name}...')
     model = SentenceTransformer(model_name) # this is already doing L2 Norm

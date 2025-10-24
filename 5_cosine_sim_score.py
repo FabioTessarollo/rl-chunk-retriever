@@ -31,14 +31,14 @@ def evaluate_with_threshold(data, query_ids, threshold, device):
             if chunk_similarity >= threshold:
                 selected_chunks.add(chunk_id)
         
-        # even
+        # Get all double even chunks with similarity above threshold
         for chunk_id, chunk_embedding in page_even.items():
             chunk_similarity = get_cosine_sim(chunk_embedding, query_embedding)
             if chunk_similarity >= threshold:
                 selected_chunks.add(chunk_id)
                 selected_chunks.add(chunk_id + 1)
 
-        # odd
+        # Get all double odd chunks with similarity above threshold
         for chunk_id, chunk_embedding in page_odd.items():
             chunk_similarity = get_cosine_sim(chunk_embedding, query_embedding)
             if chunk_similarity >= threshold:
@@ -189,13 +189,17 @@ def get_rankings_with_threshold(data, query_ids, threshold, device, top_k, n_exa
     return rankings, single_similarities, double_similarities
 
 def main():
-    set = 'train'
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-    pages_path = f"data_chunks_emb/pages_chunked_emb_{set}.json"
-    pages_doub_even_path = f"data_chunks_emb/pages_doub_chunked_even_{set}.json"
-    pages_doub_odd_path = f"data_chunks_emb/pages_doub_chunked_odd_{set}.json"
-    relevant_path = f"data_chunks_emb/relevant_chunks_emb_{set}.json"
-    cosine_sim_path = f"data_chunks_cos_sim/cosine_sim_rank_threshold_{set}.json"
+    pages_path = f"data_chunks_emb/pages_chunked_emb_train.json"
+    pages_doub_even_path = f"data_chunks_emb/pages_doub_chunked_even_train.json"
+    pages_doub_odd_path = f"data_chunks_emb/pages_doub_chunked_odd_train.json"
+    relevant_path = f"data_chunks_emb/relevant_chunks_emb_train.json"
+    cosine_sim_path = f"data_chunks_cos_sim/cosine_sim_rank_threshold.json"
+
+    pages_path_test = f"data_chunks_emb/pages_chunked_emb_test.json"
+    pages_doub_even_path_test = f"data_chunks_emb/pages_doub_chunked_even_test.json"
+    pages_doub_odd_path_test = f"data_chunks_emb/pages_doub_chunked_odd_test.json"
+    relevant_path_test = f"data_chunks_emb/relevant_chunks_emb_test.json"
 
     data = Data(pages_path, relevant_path, pages_doub_even_path, pages_doub_odd_path, cosine_sim_path)
     data.load_pages()
@@ -203,6 +207,12 @@ def main():
     data.load_pages_odd()
     data.load_relevant()
     data.load_cosine_sim()
+
+    data_test = Data(pages_path_test, relevant_path_test, pages_doub_even_path_test, pages_doub_odd_path_test)
+    data_test.load_pages()
+    data_test.load_pages_even()
+    data_test.load_pages_odd()
+    data_test.load_relevant()
 
     n_examples = 2
 
@@ -231,21 +241,35 @@ def main():
     print(f"Recall: {val_recall:.4f}")
     print(f"Precision: {val_precision:.4f}")
     print(f"F1 Score: {val_f1:.4f}")
+
+    # Evaluate on test set with optimal threshold
+    print(f"\n=== Test Set Results (Threshold: {optimal_threshold:.3f}) ===")
+    val_recall, val_precision, val_f1 = evaluate_with_threshold(data_test, data_test.query_ids, optimal_threshold, device)
+    print(f"Recall: {val_recall:.4f}")
+    print(f"Precision: {val_precision:.4f}")
+    print(f"F1 Score: {val_f1:.4f}")
     
     # Get rankings for all queries using optimal threshold
     print(f"\nGenerating rankings with optimal threshold...")
     top_k = 40
     threshold = 0.77
     all_rankings, single_similarities, double_similarities = get_rankings_with_threshold(data, data.query_ids, threshold, device, top_k,n_examples)
-    
+
+    all_rankings_test, _, _ = get_rankings_with_threshold(data_test, data_test.query_ids, threshold, device, top_k,n_examples)
+
+
     # Create output directory if it doesn't exist
     output_dir = "data_chunks_cos_sim"
     os.makedirs(output_dir, exist_ok=True)
 
     # Save to JSON files
-    output_file = os.path.join(output_dir, "cosine_sim_rank_threshold.json")
+    # output_file = os.path.join(output_dir, "cosine_sim_rank_threshold.json")
+    # with open(output_file, 'w') as f:
+    #     json.dump(all_rankings, f, indent=2)
+
+    output_file = os.path.join(output_dir, "cosine_sim_rank_threshold_test.json")
     with open(output_file, 'w') as f:
-        json.dump(all_rankings, f, indent=2)
+        json.dump(all_rankings_test, f, indent=2)
 
     output_file = os.path.join(output_dir, "single_similarities.json")
     with open(output_file, 'w') as f:

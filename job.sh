@@ -7,7 +7,7 @@ uv run 6_train.py \
     --replay_capacity 10000 \
     --lr 0.00001 \
     --target_update 1000 \
-    --epochs 200 \
+    --epochs 100 \
     --max_exp_loops 3 \
     --action_dim 4 \
     --dropout_p 0 \

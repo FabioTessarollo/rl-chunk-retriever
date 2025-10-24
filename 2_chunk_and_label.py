@@ -84,7 +84,7 @@ def process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chu
         json.dump(relevant_output, out, ensure_ascii=False, indent=2)
 
 def main():
-    set = 'train'
+    set = 'test'
     pages_path = f'data_extract/pages_{set}.jsonl'
     relevant_path = f'data_extract/relevant_paragraphs_{set}.jsonl'
     pages_out_path = f'data_chunks/pages_chunked_{set}.json'

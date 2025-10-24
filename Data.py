@@ -215,7 +215,16 @@ class Data:
 
         return first_set, second_set
 
-            
+    def get_full_set(self):
 
-            
+        pages = {}
 
+        # map page_id -> list of query_ids
+        for q in self.query_ids:
+            query = self.get_query_obj_from_id(q)
+            page_id = query.get("page_id")
+            if page_id not in pages:
+                pages[page_id] = []
+            pages[page_id].append(q)
+
+        return pages
