@@ -223,9 +223,9 @@ def main():
     per_beta_increment = 0.001  # Beta annealing rate
 
     # Early Stopping
-    es = EarlyStopping(patience=35, delta_ratio=0.01)
+    es = EarlyStopping(patience=13, delta_ratio=0.001)
 
-    # Set device to MPS if available (for Apple Silicon acceleration), else CPU
+    # Set device
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"Using device: {device}")
 
@@ -407,21 +407,9 @@ def main():
         val_f1_scores.append(avg_val_f1_score)
 
         # Step the scheduler
-        if scheduler is not None:
-            if scheduler_type == "plateau":
-                scheduler.step(avg_val_f1_score)
-            elif scheduler_type == "dedicated":
-                if epoch >= epoch_start:
-                    for param_group in optimizer.param_groups:
-                        param_group['lr'] *= factor
-            else:
-                scheduler.step()
-
-        if avg_val_f1_score > best_score:
-            best_score = avg_val_f1_score
-            torch.save(online_net.state_dict(), "models/rl-chunk-retriever.pt")
+        scheduler.step()
         
-        if epoch > 2:
+        if epoch > 65:
             if es.step(avg_val_f1_score):
                 print(f"Early stopping at epoch {epoch}")
                 break
@@ -442,6 +430,8 @@ def main():
     plt.plot(val_f1_scores, label='val')
     plt.legend()
     plt.savefig('train_vs_val.png')
+
+    torch.save(online_net.state_dict(), "models/rl-chunk-retriever.pt")
 
     # TEST SET GREEDY
     print("TEST")
