@@ -28,7 +28,14 @@ class Topic:
 
     def cos_sim_norm(self, v1, v2):
         sim = torch.nn.functional.cosine_similarity(v1.unsqueeze(0), v2.unsqueeze(0))
-        return (sim + 1) / 2
+        sim = (sim + 1) / 2
+        sim = (sim - 0.75) / 0.25
+        return sim
+    
+    def euc_sim_norm(self, v1, v2):
+        distance = torch.nn.functional.pairwise_distance(v1.unsqueeze(0), v2.unsqueeze(0))
+        sim = torch.exp(-distance / 1.0)
+        return sim
     
     def get_state_metadata(self):
         #add similarity metrics?
@@ -37,10 +44,13 @@ class Topic:
         single_chunk_already_in_bag = int(self.current_chunk_id in self.bag_of_chunks)
         next_chunk_already_in_bag = int(self.current_chunk_id + 1 in self.bag_of_chunks)
         bag_size = len(self.bag_of_chunks) / len(self.ranked_chunks)
-        sq_sim = (self.cos_sim_norm(self.single_chunk_emb, self.query_emb) - 0.75) / 0.25 #/ self.avg_sim ) / 2self.single_sims.get(str(self.current_chunk_id), 0)
-        dq_sim = (self.cos_sim_norm(self.double_chunk_emb, self.query_emb) - 0.75) / 0.25#self.double_sims.get(str(self.current_chunk_id), 0) #/ self.avg_sim ) / 2
-        bq_sim = (self.cos_sim_norm(self.bag_of_chunks_embedding, self.query_emb) - 0.75) / 0.25 #/ self.avg_sim ) / 2
-        state_metadata = torch.tensor([rank_position, remaining_loops, single_chunk_already_in_bag, next_chunk_already_in_bag, bag_size, sq_sim, dq_sim, bq_sim], device = self.device) #, self.avg_sim
+        sq_sim = self.cos_sim_norm(self.single_chunk_emb, self.query_emb)
+        dq_sim = self.cos_sim_norm(self.double_chunk_emb, self.query_emb)
+        bq_sim = self.cos_sim_norm(self.bag_of_chunks_embedding, self.query_emb)
+        #sq_eu_sim = self.euc_sim_norm(self.single_chunk_emb, self.query_emb)
+        #dq_eu_sim = self.euc_sim_norm(self.double_chunk_emb, self.query_emb)
+        #bq_eu_sim = self.euc_sim_norm(self.bag_of_chunks_embedding, self.query_emb)
+        state_metadata = torch.tensor([rank_position, remaining_loops, single_chunk_already_in_bag, next_chunk_already_in_bag, bag_size, sq_sim, dq_sim, bq_sim], device = self.device)
         return state_metadata
 
     def get_initial_step(self):
@@ -86,11 +96,11 @@ class Topic:
         self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
 
         if self.current_chunk_id in self.relevant_chunks and self.current_chunk_id not in self.bag_of_chunks:
-            reward = -1# -0.01 #if self.current_loop > 0 else 0 #-0.05 * (self.current_loop + 1) # -1
+            reward = -1
             #if self.current_rank_chunk < 3 and self.current_chunk_id not in self.bag_of_chunks:
             #    reward -= 1 - self.current_rank_chunk/3
         else:
-            reward = 1 #-0.01 * (self.current_loop + 1) #+0.1
+            reward = 1
 
         if self.current_rank_chunk < 3 and self.current_chunk_id not in self.bag_of_chunks:
             reward -= 1 - self.current_rank_chunk/3

@@ -414,14 +414,6 @@ def main():
                 print(f"Early stopping at epoch {epoch}")
                 break
 
-        if epoch > 70:
-            avg_val_reward, avg_val_f1_score = evaluate(
-                data_test, data.query_ids, online_net, device, 
-                max_exp_loops
-            )
-            logging.info(f"GREEDY: TEST Reward: {avg_val_reward:.4f}, TEST F1: {avg_val_f1_score:.4f}")
-            print(f"GREEDY: TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
-
     extra_logger.info(f"{now_str}\t{proj_dim}\t{gamma}\t{epsilon_min}\t{epsilon_decay}\t{batch_size}\t{replay_capacity}\t{lr}\t{target_update}\t{epochs}\t{max_exp_loops}\t{action_dim}\t{scheduler_type}\t{per_alpha}\t{per_beta}\t{per_beta_increment}\t{dropout_p}\t{best_score:.4f}")
     
     print_branch_importance(online_net, proj_dim)
