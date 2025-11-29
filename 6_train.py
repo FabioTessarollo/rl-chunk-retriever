@@ -113,6 +113,8 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
                 elif action == 2:
                     next_emb, next_meta, reward, done = topic.take_double()
                 elif action == 3:
+                    next_emb, next_meta, reward, done = topic.take_prev_double()
+                elif action == 4:
                     next_emb, next_meta, reward, done = topic.submit_current_bag()
                 
             next_emb = next_emb.to(device)
@@ -166,11 +168,11 @@ def main():
 
     fair_query_ids, superdifficult_query_ids = data.get_query_ids_by_difficulty()
 
-    train_set, validation_set = data.balanced_split_query_ids(fair_query_ids, 0.7)
+    train_set, validation_set = data.balanced_split_query_ids(fair_query_ids, 1)
 
     best_score = 0
     proj_dim = 256
-    metadata_dim = 8
+    metadata_dim = 9
     epsilon = 1.0
 
     # TO DO
@@ -223,7 +225,10 @@ def main():
     per_beta_increment = 0.001  # Beta annealing rate
 
     # Early Stopping
-    es = EarlyStopping(patience=13, delta_ratio=0.001)
+    es = EarlyStopping(patience=25, delta_ratio=0.001)
+    # patience = 15
+    # no_improv_epoches = 0
+    # best_validation_score = 0
 
     # Set device
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -316,7 +321,9 @@ def main():
                     next_emb, next_meta, reward, done = topic.take_single()
                 elif action == 2:
                     next_emb, next_meta, reward, done = topic.take_double()
-                elif action == 3 and action_dim == 4:
+                elif action == 3:
+                    next_emb, next_meta, reward, done = topic.take_prev_double()
+                elif action == 4 and action_dim == 5:
                     next_emb, next_meta, reward, done = topic.submit_current_bag()
                     
                 next_emb = next_emb.to(device)
@@ -396,23 +403,33 @@ def main():
         print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
         train_f1_scores.append(avg_train_f1_score)
 
-        # VALIDATION SET GREEDY
-        online_net.eval()
-        avg_val_reward, avg_val_f1_score = evaluate(
-            data, validation_set, online_net, device, 
-            max_exp_loops
-        )
-        logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
-        print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
-        val_f1_scores.append(avg_val_f1_score)
-
         # Step the scheduler
         scheduler.step()
-        
-        if epoch > 65:
+
+        # VALIDATION SET GREEDY
+        if epoch > 35:
+            online_net.eval()
+            # avg_val_reward, avg_val_f1_score = evaluate(
+            #     data, validation_set, online_net, device, 
+            #     max_exp_loops
+            # )
+            # logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
+            # print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
+            # val_f1_scores.append(avg_val_f1_score)
+
+            avg_val_reward, avg_val_f1_score = evaluate(
+                data_test, data_test.query_ids, online_net, device, 
+                max_exp_loops
+            )
+            logging.info(f"GREEDY: TEST Reward: {avg_val_reward:.4f}, TEST F1: {avg_val_f1_score:.4f}")
+            print(f"GREEDY: TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
+
+            # Early stopping
             if es.step(avg_val_f1_score):
                 print(f"Early stopping at epoch {epoch}")
                 break
+
+
 
     extra_logger.info(f"{now_str}\t{proj_dim}\t{gamma}\t{epsilon_min}\t{epsilon_decay}\t{batch_size}\t{replay_capacity}\t{lr}\t{target_update}\t{epochs}\t{max_exp_loops}\t{action_dim}\t{scheduler_type}\t{per_alpha}\t{per_beta}\t{per_beta_increment}\t{dropout_p}\t{best_score:.4f}")
     
@@ -433,7 +450,7 @@ def main():
     model.eval()
 
     avg_val_reward, avg_val_f1_score = evaluate(
-        data_test, data.query_ids, model, device, 
+        data_test, data_test.query_ids, model, device, 
         max_exp_loops
     )
     logging.info(f"GREEDY: TEST Reward: {avg_val_reward:.4f}, TEST F1: {avg_val_f1_score:.4f}")
