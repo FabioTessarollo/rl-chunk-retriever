@@ -2,11 +2,11 @@ uv run 6_train.py \
     --proj_dim 512 \
     --gamma 0.99 \
     --epsilon_min 0.01 \
-    --epsilon_decay 0.99999 \
-    --batch_size 64 \
+    --epsilon_decay 0.99995 \
+    --batch_size 32 \
     --replay_capacity 50000 \
     --lr 0.00001 \
-    --target_update 1000 \
+    --target_update 2000 \
     --epochs 200 \
     --max_exp_loops 1 \
     --action_dim 5 \

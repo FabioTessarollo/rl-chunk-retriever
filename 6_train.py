@@ -140,7 +140,7 @@ def main():
     pages_doub_even_path = "data_chunks_emb/pages_doub_chunked_even_train.json"
     pages_doub_odd_path = "data_chunks_emb/pages_doub_chunked_odd_train.json"
     relevant_path = "data_chunks_emb/relevant_chunks_emb_train.json"
-    cosine_sim_path = "data_chunks_cos_sim/cosine_sim_rank_threshold.json" #_threshold
+    cosine_sim_path = "data_chunks_cos_sim/cosine_sim_rank_threshold_only_single.json" #_threshold
     single_similarities = "data_chunks_cos_sim/single_similarities.json"
     double_similarities = "data_chunks_cos_sim/double_similarities.json"
 
@@ -148,7 +148,7 @@ def main():
     pages_doub_even_path_test = f"data_chunks_emb/pages_doub_chunked_even_test.json"
     pages_doub_odd_path_test = f"data_chunks_emb/pages_doub_chunked_odd_test.json"
     relevant_path_test = f"data_chunks_emb/relevant_chunks_emb_test.json"
-    cosine_sim_path_test = "data_chunks_cos_sim/cosine_sim_rank_threshold_test.json" #_threshold
+    cosine_sim_path_test = "data_chunks_cos_sim/cosine_sim_rank_threshold_only_single_test.json" #_threshold
 
     data = Data(pages_path, relevant_path, pages_doub_even_path, pages_doub_odd_path, cosine_sim_path, single_similarities, double_similarities)
     data.load_pages()
