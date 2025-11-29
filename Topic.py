@@ -79,10 +79,10 @@ class Topic:
         if self.current_chunk_id == self.max_chunk_id:
             self.current_chunk_id -= 1
 
-        if self.current_chunk_id % 2 == 0 or self.current_chunk_id == 0:
-            self.double_chunk_emb = self.page_even_chunks_dict.get(self.current_chunk_id)
-        else:
-            self.double_chunk_emb = self.page_odd_chunks_dict.get(self.current_chunk_id)
+        # if self.current_chunk_id % 2 == 0 or self.current_chunk_id == 0:
+        #     self.double_chunk_emb = self.page_even_chunks_dict.get(self.current_chunk_id)
+        # else:
+        #     self.double_chunk_emb = self.page_odd_chunks_dict.get(self.current_chunk_id)
         
         state_embedding = torch.concat((self.single_chunk_emb, self.double_chunk_emb, self.query_emb, self.bag_of_chunks_embedding), dim = 0)
 

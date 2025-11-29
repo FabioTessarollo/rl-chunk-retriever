@@ -221,7 +221,7 @@ def main():
     fair_query_ids, superdifficult_query_ids = data.get_query_ids_by_difficulty()
 
     # Split data into training and validation sets
-    training_set, validation_set = data.balanced_split_query_ids(fair_query_ids, 0.7)
+    training_set, validation_set = data.balanced_split_query_ids(fair_query_ids, 1)
     
     print(f"Training queries: {len(training_set)}")
     print(f"Validation queries: {len(validation_set)}")
@@ -237,11 +237,11 @@ def main():
     print(f"F1 Score: {train_f1:.4f}")
     
     # Evaluate on validation set with optimal threshold
-    print(f"\n=== Validation Set Results (Threshold: {optimal_threshold:.3f}) ===")
-    val_recall, val_precision, val_f1 = evaluate_with_threshold(data, validation_set, optimal_threshold, device)
-    print(f"Recall: {val_recall:.4f}")
-    print(f"Precision: {val_precision:.4f}")
-    print(f"F1 Score: {val_f1:.4f}")
+    # print(f"\n=== Validation Set Results (Threshold: {optimal_threshold:.3f}) ===")
+    # val_recall, val_precision, val_f1 = evaluate_with_threshold(data, validation_set, optimal_threshold, device)
+    # print(f"Recall: {val_recall:.4f}")
+    # print(f"Precision: {val_precision:.4f}")
+    # print(f"F1 Score: {val_f1:.4f}")
 
     # Evaluate on test set with optimal threshold
     print(f"\n=== Test Set Results (Threshold: {optimal_threshold:.3f}) ===")
