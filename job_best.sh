@@ -6,7 +6,7 @@ uv run 6_train.py \
     --batch_size 32 \
     --replay_capacity 50000 \
     --lr 0.00001 \
-    --target_update 2000 \
+    --target_update 5000 \
     --epochs 200 \
     --max_exp_loops 1 \
     --action_dim 5 \
