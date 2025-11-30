@@ -394,21 +394,22 @@ def main():
         logging.info(f"Epoch: {epoch}, Average Reward: {avg_epoch_reward:.4f}, Average F1: {avg_epoch_f1_score:.4f}, Epsilon: {epsilon:.4f}")
         print(f"Average Reward: {avg_epoch_reward:.4f}, Average F1: {avg_epoch_f1_score:.4f}")
 
-        # TRAIN SET GREEDY
-        avg_train_reward, avg_train_f1_score = evaluate(
-            data, train_set, online_net, device, 
-            max_exp_loops
-        )
-        logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
-        print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
-        train_f1_scores.append(avg_train_f1_score)
-
         # Step the scheduler
         scheduler.step()
 
         # VALIDATION SET GREEDY
-        if epoch > 35:
+        if epoch > 20:
             online_net.eval()
+
+            # TRAIN SET GREEDY
+            avg_train_reward, avg_train_f1_score = evaluate(
+                data, train_set, online_net, device, 
+                max_exp_loops
+            )
+            logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
+            print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
+            train_f1_scores.append(avg_train_f1_score)
+
             # avg_val_reward, avg_val_f1_score = evaluate(
             #     data, validation_set, online_net, device, 
             #     max_exp_loops
