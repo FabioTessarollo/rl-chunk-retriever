@@ -168,7 +168,7 @@ def main():
 
     fair_query_ids, superdifficult_query_ids = data.get_query_ids_by_difficulty()
 
-    train_set, validation_set = data.balanced_split_query_ids(fair_query_ids, 1)
+    train_set, validation_set = data.balanced_split_query_ids(fair_query_ids, 1) #0.66
 
     best_score = 0
     proj_dim = 256
@@ -225,7 +225,7 @@ def main():
     per_beta_increment = 0.001  # Beta annealing rate
 
     # Early Stopping
-    es = EarlyStopping(patience=25, delta_ratio=0.001)
+    es = EarlyStopping(patience=10, delta_ratio=0.001)
     # patience = 15
     # no_improv_epoches = 0
     # best_validation_score = 0
@@ -398,37 +398,39 @@ def main():
         scheduler.step()
 
         # VALIDATION SET GREEDY
-        if epoch > 20:
-            online_net.eval()
+        #if epoch > 20:
+        # online_net.eval()
 
-            # TRAIN SET GREEDY
-            avg_train_reward, avg_train_f1_score = evaluate(
-                data, train_set, online_net, device, 
-                max_exp_loops
-            )
-            logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
-            print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
-            train_f1_scores.append(avg_train_f1_score)
+        # # TRAIN SET GREEDY
+        # avg_train_reward, avg_train_f1_score = evaluate(
+        #     data, train_set, online_net, device, 
+        #     max_exp_loops
+        # )
+        # logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
+        # print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
+        # train_f1_scores.append(avg_train_f1_score)
+
+        # avg_val_reward, avg_val_f1_score = evaluate(
+        #     data, validation_set, online_net, device, 
+        #     max_exp_loops
+        # )
+        # logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
+        # print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
+        # val_f1_scores.append(avg_val_f1_score)
 
             # avg_val_reward, avg_val_f1_score = evaluate(
-            #     data, validation_set, online_net, device, 
+            #     data_test, data_test.query_ids, online_net, device, 
             #     max_exp_loops
             # )
-            # logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
-            # print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
-            # val_f1_scores.append(avg_val_f1_score)
-
-            avg_val_reward, avg_val_f1_score = evaluate(
-                data_test, data_test.query_ids, online_net, device, 
-                max_exp_loops
-            )
-            logging.info(f"GREEDY: TEST Reward: {avg_val_reward:.4f}, TEST F1: {avg_val_f1_score:.4f}")
-            print(f"GREEDY: TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
+            # logging.info(f"GREEDY: TEST Reward: {avg_val_reward:.4f}, TEST F1: {avg_val_f1_score:.4f}")
+            # print(f"GREEDY: TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
+        if epoch == 33:
+            break
 
             # Early stopping
-            if es.step(avg_val_f1_score):
-                print(f"Early stopping at epoch {epoch}")
-                break
+        # if es.step(avg_val_f1_score):
+        #     print(f"Early stopping at epoch {epoch}")
+        #     break
 
 
 
