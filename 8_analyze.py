@@ -2,12 +2,12 @@ import json
 import os
 
 # Define the file paths
-RL_MODEL_FILE = 'data_analysis/rl_model_retrieved_test.json'
-COS_SIM_FILE = 'data_analysis/cosine_sim_rank_retrieved_test.json'
+RL_MODEL_FILE = 'data_analysis/rl_model_retrieved_test_single.json' 
+COS_SIM_FILE = 'data_analysis/cosine_sim_rank_retrieved_test_single.json'
 CHUNKS_SCORES_FILE = 'data_analysis/chunks_completeness_test.json'
-OUTPUT_MERGED = "data_analysis/comprehensive_merged_results.json"
-OUTPUT_COMBINED_FILTER = "data_analysis/no_isolated_chunks.json" # User specified output filename
-OUTPUT_ADJACENT_ANALYSIS = "data_analysis/adjacent_chunks_analysis.json"
+OUTPUT_MERGED = "data_analysis/comprehensive_merged_results_single.json"
+OUTPUT_COMBINED_FILTER = "data_analysis/no_isolated_chunks_single.json"
+OUTPUT_ADJACENT_ANALYSIS = "data_analysis/adjacent_chunks_analysis_single.json"
 
 def load_json_data(filepath):
     try:

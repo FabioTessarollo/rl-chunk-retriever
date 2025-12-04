@@ -16,10 +16,11 @@ def evaluate_with_threshold(data, query_ids, threshold, device):
     precision_total = 0
     f1_score_total = 0
     n = 0
-    
+    cosine_sim_results = []
     for query_id in query_ids:
         query = data.get_query_obj_from_id(query_id)
         page_id = query.get("page_id")
+        query_desc = query.get("query_desc")
         page, page_even, page_odd = data.get_page_chunks_dict(page_id)
         query_embedding = torch.tensor(query.get("query")).to(device)
         relevant_chunks = set(query.get("relevant_chunks"))
@@ -61,12 +62,19 @@ def evaluate_with_threshold(data, query_ids, threshold, device):
         
         f1_score = 2 * (precision * recall) / (precision + recall) if precision + recall > 0 else 0
         f1_score_total += f1_score
+
+        # Add query result to list
+        cosine_sim_results.append({
+            "query_desc": query_desc,
+            "f1_score": f1_score,
+            "cos_sim_retrieved_chunks": list(selected_chunks)
+        })
     
     avg_recall = recall_total / n if n > 0 else 0
     avg_precision = precision_total / n if n > 0 else 0
     avg_f1_score = f1_score_total / n if n > 0 else 0
     
-    return avg_recall, avg_precision, avg_f1_score
+    return avg_recall, avg_precision, avg_f1_score, cosine_sim_results
 
 def find_optimal_threshold(data, training_query_ids, device, threshold_range=(0.77, 0.83), step=0.01):
     """Find the optimal cosine similarity threshold using training data"""
@@ -77,7 +85,7 @@ def find_optimal_threshold(data, training_query_ids, device, threshold_range=(0.
     thresholds = np.arange(threshold_range[0], threshold_range[1] + step, step)
     
     for threshold in thresholds:
-        _, _, f1_score = evaluate_with_threshold(data, training_query_ids, threshold, device)
+        _, _, f1_score, _ = evaluate_with_threshold(data, training_query_ids, threshold, device)
         
         if f1_score > best_f1_score:
             best_f1_score = f1_score
@@ -159,15 +167,15 @@ def get_rankings_with_threshold(data, query_ids, threshold, device, top_k, n_exa
         top_chunks = dict(sorted(chunks_similarity_dict.items(), key=lambda x: x[1], reverse=True)[:top_k])
         
         # Store the query info
-        rankings[query_id] = {
-            "query_desc": query_desc,
-            "relevant_chunks": [chunk_id for chunk_id, _ in top_chunks.items()]
-        }
+        # rankings[query_id] = {
+        #     "query_desc": query_desc,
+        #     "relevant_chunks": [chunk_id for chunk_id, _ in top_chunks.items()]
+        # }
 
-        single_similarities[query_id] = {
-            "query_desc": query_desc,
-            "similarities": {k: (v - global_min) / range_similarity for k, v in chunks_similarity_dict.items()}
-        }
+        # single_similarities[query_id] = {
+        #     "query_desc": query_desc,
+        #     "similarities": {k: (v - global_min) / range_similarity for k, v in chunks_similarity_dict.items()}
+        # }
 
         # double_similarities[query_id] = {
         #     "query_desc": query_desc,
@@ -231,7 +239,7 @@ def main():
     
     # Evaluate on training set with optimal threshold
     print(f"\n=== Training Set Results (Threshold: {optimal_threshold:.3f}) ===")
-    train_recall, train_precision, train_f1 = evaluate_with_threshold(data, training_set, optimal_threshold, device)
+    train_recall, train_precision, train_f1, _ = evaluate_with_threshold(data, training_set, optimal_threshold, device)
     print(f"Recall: {train_recall:.4f}")
     print(f"Precision: {train_precision:.4f}")
     print(f"F1 Score: {train_f1:.4f}")
@@ -245,7 +253,7 @@ def main():
 
     # Evaluate on test set with optimal threshold
     print(f"\n=== Test Set Results (Threshold: {optimal_threshold:.3f}) ===")
-    val_recall, val_precision, val_f1 = evaluate_with_threshold(data_test, data_test.query_ids, optimal_threshold, device)
+    val_recall, val_precision, val_f1, cosine_sim_results  = evaluate_with_threshold(data_test, data_test.query_ids, optimal_threshold, device)
     print(f"Recall: {val_recall:.4f}")
     print(f"Precision: {val_precision:.4f}")
     print(f"F1 Score: {val_f1:.4f}")
@@ -264,13 +272,17 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     # Save to JSON files
-    output_file = os.path.join(output_dir, "cosine_sim_rank_threshold_only_single.json")
-    with open(output_file, 'w') as f:
-        json.dump(all_rankings, f, indent=2)
+    # output_file = os.path.join(output_dir, "cosine_sim_rank_threshold_only_single.json")
+    # with open(output_file, 'w') as f:
+    #     json.dump(all_rankings, f, indent=2)
 
-    output_file = os.path.join(output_dir, "cosine_sim_rank_threshold_only_single_test.json")
+    output_file = os.path.join(output_dir, "cosine_sim_rank_retrieved_test_single.json") #cosine_sim_rank_threshold_test
     with open(output_file, 'w') as f:
-        json.dump(all_rankings_test, f, indent=2)
+        json.dump(cosine_sim_results, f, indent=2)
+
+    # output_file = os.path.join(output_dir, "cosine_sim_rank_threshold_only_single_test.json")
+    # with open(output_file, 'w') as f:
+    #     json.dump(all_rankings_test, f, indent=2)
 
     # output_file = os.path.join(output_dir, "single_similarities.json")
     # with open(output_file, 'w') as f:
