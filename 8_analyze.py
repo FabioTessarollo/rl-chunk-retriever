@@ -135,6 +135,34 @@ def has_long_consecutive_sequence(relevant_chunks_list, max_allowed_length=3):
     return max_consecutive_count > max_allowed_length
 
 
+
+def identify_adjacent_chunks(chunk_scores):
+    """
+    Identify adjacent chunks that are next to a more relevant chunk.
+    Returns a set of adjacent chunk IDs.
+    """
+    if not chunk_scores:
+        return set()
+    
+    sorted_chunks = sorted(chunk_scores.items())
+    adjacent = set()
+    
+    for i, (chunk_id, score) in enumerate(sorted_chunks):
+        # Check previous neighbor
+        if i > 0:
+            prev_id, prev_score = sorted_chunks[i-1]
+            if prev_id == chunk_id - 1 and prev_score > score and prev_score > 0.5:
+                adjacent.add(chunk_id)
+        
+        # Check next neighbor
+        if i < len(sorted_chunks) - 1:
+            next_id, next_score = sorted_chunks[i+1]
+            if next_id == chunk_id + 1 and next_score > score and next_score > 0.5:
+                adjacent.add(chunk_id)
+    
+    return adjacent
+
+
 # --- Combined Analysis Function ---
 def process_combined_analysis(full_data):
     print("-" * 30)
@@ -179,48 +207,6 @@ def process_combined_analysis(full_data):
 
     return filtered_data
 
-
-# --- NEW: Adjacent Chunks Analysis ---
-def get_chunk_scores_dict(relevant_chunks_list):
-    """Extract chunk IDs and their relevance scores into a dictionary."""
-    scores = {}
-    for item in relevant_chunks_list:
-        for k, v in item.items():
-            try:
-                chunk_id = int(k)
-                scores[chunk_id] = float(v)
-            except (ValueError, TypeError):
-                continue
-    return scores
-
-
-def identify_adjacent_chunks(chunk_scores):
-    """
-    Identify adjacent chunks that are next to a more relevant chunk.
-    Returns a set of adjacent chunk IDs.
-    """
-    if not chunk_scores:
-        return set()
-    
-    sorted_chunks = sorted(chunk_scores.items())
-    adjacent = set()
-    
-    for i, (chunk_id, score) in enumerate(sorted_chunks):
-        # Check previous neighbor
-        if i > 0:
-            prev_id, prev_score = sorted_chunks[i-1]
-            if prev_id == chunk_id - 1 and prev_score > score:
-                adjacent.add(chunk_id)
-        
-        # Check next neighbor
-        if i < len(sorted_chunks) - 1:
-            next_id, next_score = sorted_chunks[i+1]
-            if next_id == chunk_id + 1 and next_score > score:
-                adjacent.add(chunk_id)
-    
-    return adjacent
-
-
 def get_retrieved_chunks_set(retrieved_list):
     """Extract chunk IDs from retrieved chunks list."""
     chunks = set()
@@ -245,121 +231,223 @@ def get_retrieved_chunks_set(retrieved_list):
 
 def analyze_adjacent_chunks(filtered_data):
     """
-    Analyze adjacent chunks errors between CosSim and RL models.
+    Analyze CosSim errors (FP and FN) and how many were corrected by RL model.
     """
     print("\n" + "=" * 60)
-    print("ADJACENT CHUNKS ANALYSIS")
+    print("COSIM ERRORS ANALYSIS - RL MODEL CORRECTIONS")
     print("=" * 60)
     
     results = []
     
-    # Metrics for CosSim errors that RL fixed
-    cos_fp_total = 0  # False positives (took adjacent when shouldn't)
+    # Metrics for CosSim errors
+    cos_fp_total = 0  # False positives (retrieved but not relevant)
     cos_fp_rl_correct = 0  # RL correctly didn't take it
     
-    cos_fn_total = 0  # False negatives (didn't take adjacent when should)
+    cos_fn_total = 0  # False negatives (relevant but not retrieved)
     cos_fn_rl_correct = 0  # RL correctly took it
-    
-    # Metrics for RL errors that CosSim fixed
-    rl_fp_total = 0
-    rl_fp_cos_correct = 0
-    
-    rl_fn_total = 0
-    rl_fn_cos_correct = 0
     
     for entry in filtered_data:
         query = entry.get('query', '')
         chunks_list = entry.get('relevant_chunks', [])
         
-        chunk_scores = get_chunk_scores_dict(chunks_list)
-        adjacent_chunks = identify_adjacent_chunks(chunk_scores)
+        # Get all relevant chunk IDs
+        relevant_chunks = set()
+        for item in chunks_list:
+            for k in item.keys():
+                try:
+                    relevant_chunks.add(int(k))
+                except (ValueError, TypeError):
+                    continue
         
-        if not adjacent_chunks:
-            continue
-        
-        all_relevant = set(chunk_scores.keys())
-        non_adjacent_relevant = all_relevant - adjacent_chunks
-        
+        # Get retrieved chunks from both models
         rl_retrieved = get_retrieved_chunks_set(entry.get('rl_model_retrieved', []))
         cos_retrieved = get_retrieved_chunks_set(entry.get('cos_sim_retrieved_chunks', []))
         
-        # Analyze each adjacent chunk
+        # Find CosSim False Positives (retrieved but not relevant)
+        cos_fp = cos_retrieved - relevant_chunks
+        
+        # Find CosSim False Negatives (relevant but not retrieved)
+        cos_fn = relevant_chunks - cos_retrieved
+        
         query_result = {
             'query': query,
-            'adjacent_chunks': sorted(list(adjacent_chunks)),
-            'cos_errors': [],
-            'rl_errors': []
+            'cos_false_positives': [],
+            'cos_false_negatives': []
         }
         
-        for adj_chunk in adjacent_chunks:
-            cos_took = adj_chunk in cos_retrieved
-            rl_took = adj_chunk in rl_retrieved
+        # Analyze False Positives
+        for chunk_id in cos_fp:
+            cos_fp_total += 1
+            rl_correct = chunk_id not in rl_retrieved
             
-            # Adjacent chunks should NOT be taken (they're less relevant)
-            should_take = False
+            if rl_correct:
+                cos_fp_rl_correct += 1
             
-            # CosSim false positive (took when shouldn't)
-            if cos_took and not should_take:
-                cos_fp_total += 1
-                if not rl_took:
-                    cos_fp_rl_correct += 1
-                    query_result['cos_errors'].append({
-                        'chunk_id': adj_chunk,
-                        'error_type': 'false_positive',
-                        'rl_correct': True
-                    })
-                else:
-                    query_result['cos_errors'].append({
-                        'chunk_id': adj_chunk,
-                        'error_type': 'false_positive',
-                        'rl_correct': False
-                    })
-            
-            # RL false positive (took when shouldn't)
-            if rl_took and not should_take:
-                rl_fp_total += 1
-                if not cos_took:
-                    rl_fp_cos_correct += 1
-                    query_result['rl_errors'].append({
-                        'chunk_id': adj_chunk,
-                        'error_type': 'false_positive',
-                        'cos_correct': True
-                    })
-                else:
-                    query_result['rl_errors'].append({
-                        'chunk_id': adj_chunk,
-                        'error_type': 'false_positive',
-                        'cos_correct': False
-                    })
+            query_result['cos_false_positives'].append({
+                'chunk_id': chunk_id,
+                'rl_corrected': rl_correct
+            })
         
-        if query_result['cos_errors'] or query_result['rl_errors']:
+        # Analyze False Negatives
+        for chunk_id in cos_fn:
+            cos_fn_total += 1
+            rl_correct = chunk_id in rl_retrieved
+            
+            if rl_correct:
+                cos_fn_rl_correct += 1
+            
+            query_result['cos_false_negatives'].append({
+                'chunk_id': chunk_id,
+                'rl_corrected': rl_correct
+            })
+        
+        # Only add to results if there were errors
+        if query_result['cos_false_positives'] or query_result['cos_false_negatives']:
             results.append(query_result)
     
     # Print summary
-    print(f"\nCosSim Errors on Adjacent Chunks:")
-    print(f"  False Positives (took adjacent chunks): {cos_fp_total}")
+    print(f"\nCosSim FALSE POSITIVES (retrieved but not relevant):")
+    print(f"  Total: {cos_fp_total}")
     if cos_fp_total > 0:
         pct = (cos_fp_rl_correct / cos_fp_total) * 100
         print(f"  RL Model corrected: {cos_fp_rl_correct} ({pct:.2f}%)")
+    else:
+        print(f"  RL Model corrected: 0 (0.00%)")
     
-    print(f"\nRL Model Errors on Adjacent Chunks:")
-    print(f"  False Positives (took adjacent chunks): {rl_fp_total}")
-    if rl_fp_total > 0:
-        pct = (rl_fp_cos_correct / rl_fp_total) * 100
-        print(f"  CosSim corrected: {rl_fp_cos_correct} ({pct:.2f}%)")
+    print(f"\nCosSim FALSE NEGATIVES (relevant but not retrieved):")
+    print(f"  Total: {cos_fn_total}")
+    if cos_fn_total > 0:
+        pct = (cos_fn_rl_correct / cos_fn_total) * 100
+        print(f"  RL Model corrected: {cos_fn_rl_correct} ({pct:.2f}%)")
+    else:
+        print(f"  RL Model corrected: 0 (0.00%)")
     
-    print("=" * 60)
+    print("\n" + "=" * 60)
     
     summary = {
-        'cosSim_errors': {
-            'false_positives': cos_fp_total,
+        'cosSim_false_positives': {
+            'total': cos_fp_total,
             'rl_corrected': cos_fp_rl_correct,
             'rl_correction_rate': (cos_fp_rl_correct / cos_fp_total * 100) if cos_fp_total > 0 else 0
         },
-        'rl_errors': {
-            'false_positives': rl_fp_total,
+        'cosSim_false_negatives': {
+            'total': cos_fn_total,
+            'rl_corrected': cos_fn_rl_correct,
+            'rl_correction_rate': (cos_fn_rl_correct / cos_fn_total * 100) if cos_fn_total > 0 else 0
+        },
+        'detailed_results': results
+    }
+    
+    return summary
+
+
+def analyze_rl_errors_cossim_correction(filtered_data):
+    """
+    Analyze RL Model errors (FP and FN) and how many were corrected by CosSim.
+    """
+    print("\n" + "=" * 60)
+    print("RL MODEL ERRORS ANALYSIS - COSSIM CORRECTIONS")
+    print("=" * 60)
+    
+    results = []
+    
+    # Metrics for RL errors
+    rl_fp_total = 0  # False positives (RL retrieved but not relevant)
+    rl_fp_cos_correct = 0  # CosSim correctly didn't take it
+    
+    rl_fn_total = 0  # False negatives (relevant but RL didn't retrieve)
+    rl_fn_cos_correct = 0  # CosSim correctly took it
+    
+    for entry in filtered_data:
+        query = entry.get('query', '')
+        chunks_list = entry.get('relevant_chunks', [])
+        
+        # Get all relevant chunk IDs
+        relevant_chunks = set()
+        for item in chunks_list:
+            for k in item.keys():
+                try:
+                    relevant_chunks.add(int(k))
+                except (ValueError, TypeError):
+                    continue
+        
+        # Get retrieved chunks from both models
+        rl_retrieved = get_retrieved_chunks_set(entry.get('rl_model_retrieved', []))
+        cos_retrieved = get_retrieved_chunks_set(entry.get('cos_sim_retrieved_chunks', []))
+        
+        # Find RL False Positives (retrieved by RL but not relevant)
+        rl_fp = rl_retrieved - relevant_chunks
+        
+        # Find RL False Negatives (relevant but not retrieved by RL)
+        rl_fn = relevant_chunks - rl_retrieved
+        
+        query_result = {
+            'query': query,
+            'rl_false_positives': [],
+            'rl_false_negatives': []
+        }
+        
+        # Analyze RL False Positives
+        for chunk_id in rl_fp:
+            rl_fp_total += 1
+            # CosSim is correct if it did NOT retrieve this irrelevant chunk
+            cos_correct = chunk_id not in cos_retrieved
+            
+            if cos_correct:
+                rl_fp_cos_correct += 1
+            
+            query_result['rl_false_positives'].append({
+                'chunk_id': chunk_id,
+                'cossim_corrected': cos_correct
+            })
+        
+        # Analyze RL False Negatives
+        for chunk_id in rl_fn:
+            rl_fn_total += 1
+            # CosSim is correct if it DID retrieve this relevant chunk
+            cos_correct = chunk_id in cos_retrieved
+            
+            if cos_correct:
+                rl_fn_cos_correct += 1
+            
+            query_result['rl_false_negatives'].append({
+                'chunk_id': chunk_id,
+                'cossim_corrected': cos_correct
+            })
+        
+        # Only add to results if there were errors
+        if query_result['rl_false_positives'] or query_result['rl_false_negatives']:
+            results.append(query_result)
+    
+    # Print summary
+    print(f"\nRL Model FALSE POSITIVES (retrieved but not relevant):")
+    print(f"  Total: {rl_fp_total}")
+    if rl_fp_total > 0:
+        pct = (rl_fp_cos_correct / rl_fp_total) * 100
+        print(f"  CosSim corrected: {rl_fp_cos_correct} ({pct:.2f}%)")
+    else:
+        print(f"  CosSim corrected: 0 (0.00%)")
+    
+    print(f"\nRL Model FALSE NEGATIVES (relevant but not retrieved):")
+    print(f"  Total: {rl_fn_total}")
+    if rl_fn_total > 0:
+        pct = (rl_fn_cos_correct / rl_fn_total) * 100
+        print(f"  CosSim corrected: {rl_fn_cos_correct} ({pct:.2f}%)")
+    else:
+        print(f"  CosSim corrected: 0 (0.00%)")
+    
+    print("\n" + "=" * 60)
+    
+    summary = {
+        'rl_false_positives': {
+            'total': rl_fp_total,
             'cos_corrected': rl_fp_cos_correct,
             'cos_correction_rate': (rl_fp_cos_correct / rl_fp_total * 100) if rl_fp_total > 0 else 0
+        },
+        'rl_false_negatives': {
+            'total': rl_fn_total,
+            'cos_corrected': rl_fn_cos_correct,
+            'cos_correction_rate': (rl_fn_cos_correct / rl_fn_total * 100) if rl_fn_total > 0 else 0
         },
         'detailed_results': results
     }
@@ -396,3 +484,5 @@ if __name__ == "__main__":
         with open(OUTPUT_ADJACENT_ANALYSIS, 'w') as f:
             json.dump(adjacent_analysis, f, indent=4)
         print(f"\nAdjacent chunks analysis saved to {OUTPUT_ADJACENT_ANALYSIS}")
+
+        _ = analyze_rl_errors_cossim_correction(filtered_results)
