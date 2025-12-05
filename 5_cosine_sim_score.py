@@ -167,10 +167,10 @@ def get_rankings_with_threshold(data, query_ids, threshold, device, top_k, n_exa
         top_chunks = dict(sorted(chunks_similarity_dict.items(), key=lambda x: x[1], reverse=True)[:top_k])
         
         # Store the query info
-        # rankings[query_id] = {
-        #     "query_desc": query_desc,
-        #     "relevant_chunks": [chunk_id for chunk_id, _ in top_chunks.items()]
-        # }
+        rankings[query_id] = {
+            "query_desc": query_desc,
+            "relevant_chunks": [chunk_id for chunk_id, _ in top_chunks.items()]
+        }
 
         # single_similarities[query_id] = {
         #     "query_desc": query_desc,
@@ -272,17 +272,17 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     # Save to JSON files
-    # output_file = os.path.join(output_dir, "cosine_sim_rank_threshold_only_single.json")
-    # with open(output_file, 'w') as f:
-    #     json.dump(all_rankings, f, indent=2)
+    output_file = os.path.join(output_dir, "cosine_sim_rank_threshold_only_single.json")
+    with open(output_file, 'w') as f:
+        json.dump(all_rankings, f, indent=2)
 
     output_file = os.path.join(output_dir, "cosine_sim_rank_retrieved_test_single.json") #cosine_sim_rank_threshold_test
     with open(output_file, 'w') as f:
         json.dump(cosine_sim_results, f, indent=2)
 
-    # output_file = os.path.join(output_dir, "cosine_sim_rank_threshold_only_single_test.json")
-    # with open(output_file, 'w') as f:
-    #     json.dump(all_rankings_test, f, indent=2)
+    output_file = os.path.join(output_dir, "cosine_sim_rank_threshold_only_single_test.json")
+    with open(output_file, 'w') as f:
+        json.dump(all_rankings_test, f, indent=2)
 
     # output_file = os.path.join(output_dir, "single_similarities.json")
     # with open(output_file, 'w') as f:

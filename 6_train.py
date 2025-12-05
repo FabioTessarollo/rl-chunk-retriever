@@ -166,9 +166,9 @@ def main():
     data_test.load_relevant()
     data_test.load_cosine_sim()
 
-    fair_query_ids, superdifficult_query_ids = data.get_query_ids_by_difficulty()
+    #fair_query_ids, superdifficult_query_ids = data.get_query_ids_by_difficulty()
 
-    train_set, validation_set = data.balanced_split_query_ids(fair_query_ids, 1) #0.66
+    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 1) #0.66
 
     best_score = 0
     proj_dim = 256

@@ -50,6 +50,7 @@ def process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chu
             query = entry['query']
             page_id = entry['page_id']
             paragraphs = entry['relevant_paragraphs']
+            relevant_paragraph_origin = {}
 
             page_text = pages_text_map.get(page_id)
             page_chunks = pages_chunks_map.get(page_id)
@@ -57,7 +58,7 @@ def process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chu
                 continue
 
             relevant_chunks = set()
-            for para in paragraphs:
+            for i, para in enumerate(paragraphs):
                 snippet = para[:50]  # use first 50 characters to locate it
                 start_index = page_text.find(snippet)
                 if start_index == -1:
@@ -71,13 +72,17 @@ def process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chu
                     chunk_end = chunk_start + len(chunk_text)
                     if chunk_start == -1:
                         continue
-                    if not (end_index <= chunk_start or start_index >= chunk_end):
+
+                    overlap = min(end_index, chunk_end) - max(start_index, chunk_start)
+                    if overlap > 0.05 * (chunk_end - chunk_start):
                         relevant_chunks.add(chunk_id)
+                        relevant_paragraph_origin[chunk_id] = i
 
             relevant_output.append({
                 "query": query,
                 "page_id": page_id,
-                "relevant_chunks": sorted(relevant_chunks)
+                "relevant_chunks": sorted(relevant_chunks),
+                "relevant_paragraph_origin": relevant_paragraph_origin
             })
 
     with open(relevant_out_path, 'w', encoding='utf-8') as out:
@@ -89,7 +94,18 @@ def main():
     relevant_path = f'data_extract/relevant_paragraphs_{set}.jsonl'
     pages_out_path = f'data_chunks/pages_chunked_{set}.json'
     relevant_out_path = f'data_chunks/relevant_chunks_{set}.json'
-    chunk_size = 100
+    chunk_size = 50
+
+    os.makedirs('data_chunks', exist_ok=True)
+    pages_text_map, pages_chunks_map = process_pages(pages_path, pages_out_path, chunk_size)
+    process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chunks_map, chunk_size)
+
+    set = 'train'
+    pages_path = f'data_extract/pages_{set}.jsonl'
+    relevant_path = f'data_extract/relevant_paragraphs_{set}.jsonl'
+    pages_out_path = f'data_chunks/pages_chunked_{set}.json'
+    relevant_out_path = f'data_chunks/relevant_chunks_{set}.json'
+    chunk_size = 50
 
     os.makedirs('data_chunks', exist_ok=True)
     pages_text_map, pages_chunks_map = process_pages(pages_path, pages_out_path, chunk_size)
