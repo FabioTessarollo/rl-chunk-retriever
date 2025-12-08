@@ -134,7 +134,7 @@ def main():
     print("TEST")
 
     model = DuelingDQN(metadata_dim = 9, action_dim = 5, proj_dim = 512, dropout_p = 0).to(device)
-    model.load_state_dict(torch.load("models/rl-chunk-retriever only single chunks.pt", map_location="cpu")) #rl-chunk-retriever copy
+    model.load_state_dict(torch.load("models/rl-chunk-retriever.pt", map_location="cpu")) #rl-chunk-retriever copy
     model.eval()
 
     avg_val_reward, avg_val_f1_score, results = evaluate(
