@@ -1,6 +1,7 @@
 import json
 import re
 import os
+from collections import defaultdict
 
 def chunk_text(text, chunk_size=100):
     # Split text into words and keep track of char spans
@@ -51,6 +52,7 @@ def process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chu
             page_id = entry['page_id']
             paragraphs = entry['relevant_paragraphs']
             relevant_paragraph_origin = {}
+            chunks_completeness = []
 
             page_text = pages_text_map.get(page_id)
             page_chunks = pages_chunks_map.get(page_id)
@@ -78,11 +80,29 @@ def process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chu
                         relevant_chunks.add(chunk_id)
                         relevant_paragraph_origin[chunk_id] = i
 
+                        if end_index >= chunk_end and start_index <= chunk_start:
+                            completeness = 1
+                        elif chunk_start < start_index and start_index <= chunk_end:
+                            completeness = (chunk_end - start_index) / (chunk_end - chunk_start)
+                        elif end_index >= chunk_start and end_index < chunk_end:
+                            completeness = (end_index - chunk_start) / (chunk_end - chunk_start)
+                        chunks_completeness.append({chunk_id: completeness})
+
+            agg = defaultdict(float)
+            for item in chunks_completeness:
+                for k, v in item.items():
+                    k = int(k)
+                    v = float(v)
+                    agg[k] = v if k not in agg else max(agg[k], v)
+
+            chunks_completeness = [{k: agg[k]} for k in sorted(agg)]
+
             relevant_output.append({
                 "query": query,
                 "page_id": page_id,
                 "relevant_chunks": sorted(relevant_chunks),
-                "relevant_paragraph_origin": relevant_paragraph_origin
+                "relevant_paragraph_origin": relevant_paragraph_origin,
+                "chunk_relevant_portion": chunks_completeness
             })
 
     with open(relevant_out_path, 'w', encoding='utf-8') as out:

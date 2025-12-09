@@ -1,13 +1,13 @@
 import json
 import os
+from sklearn.metrics import f1_score
+from collections import defaultdict
 
 # Define the file paths
 RL_MODEL_FILE = 'data_analysis/rl_model_retrieved_test_single.json' 
-COS_SIM_FILE = 'data_analysis/cosine_sim_rank_retrieved_test_single.json'
-CHUNKS_SCORES_FILE = 'data_analysis/chunks_completeness_test.json'
+COS_SIM_FILE = 'data_chunks_cos_sim/cosine_sim_rank_retrieved_test_single.json'
+CHUNKS_SCORES_FILE = 'data_chunks/relevant_chunks_test.json'
 OUTPUT_MERGED = "data_analysis/comprehensive_merged_results_single.json"
-OUTPUT_COMBINED_FILTER = "data_analysis/no_isolated_chunks_single.json"
-OUTPUT_ADJACENT_ANALYSIS = "data_analysis/adjacent_chunks_analysis_single.json"
 
 def load_json_data(filepath):
     try:
@@ -66,393 +66,93 @@ def merge_json_data():
     # Create ordered list
     return [get_ordered_entry(entry) for entry in merged_data_dict.values()]
 
+# claude
 
-# --- Filtering Logic 1: Isolated Chunks ---
-def has_isolated_chunks(relevant_chunks_list):
-    """
-    Returns True if ANY relevant chunk is isolated (no relevant neighbor N-1 or N+1).
-    """
-    if not relevant_chunks_list:
-        return False
+def process_all_queries(final_data, completeness_threshold):
 
-    relevant_ids = set()
-    for item in relevant_chunks_list:
-        for k in item.keys():
-            try:
-                relevant_ids.add(int(k))
-            except ValueError:
-                continue
-
-    for chunk_id in relevant_ids:
-        prev_id = chunk_id - 1
-        next_id = chunk_id + 1
-        
-        # If BOTH neighbors are missing, this chunk is isolated
-        if (prev_id not in relevant_ids) and (next_id not in relevant_ids):
-            return True
-
-    return False
-
-
-# --- Filtering Logic 2: Long Sequences ---
-def has_long_consecutive_sequence(relevant_chunks_list, max_allowed_length=3):
-    """
-    Returns True if the query has 4 or more consecutive relevant chunks.
-    """
-    if not relevant_chunks_list:
-        return False
-
-    relevant_ids = set()
-    for item in relevant_chunks_list:
-        for k in item.keys():
-            try:
-                relevant_ids.add(int(k))
-            except ValueError:
-                continue
-
-    if not relevant_ids:
-        return False
-    
-    sorted_ids = sorted(list(relevant_ids))
-
-    if len(sorted_ids) <= max_allowed_length:
-         return False
-
-    max_consecutive_count = 0
-    current_consecutive_count = 1
-
-    for i in range(1, len(sorted_ids)):
-        if sorted_ids[i] == sorted_ids[i-1] + 1:
-            current_consecutive_count += 1
-        else:
-            current_consecutive_count = 1
-        
-        max_consecutive_count = max(max_consecutive_count, current_consecutive_count)
-        
-        if max_consecutive_count > max_allowed_length:
-            return True
-
-    return max_consecutive_count > max_allowed_length
-
-
-
-def identify_adjacent_chunks(chunk_scores):
-    """
-    Identify adjacent chunks that are next to a more relevant chunk.
-    Returns a set of adjacent chunk IDs.
-    """
-    if not chunk_scores:
-        return set()
-    
-    sorted_chunks = sorted(chunk_scores.items())
-    adjacent = set()
-    
-    for i, (chunk_id, score) in enumerate(sorted_chunks):
-        # Check previous neighbor
-        if i > 0:
-            prev_id, prev_score = sorted_chunks[i-1]
-            if prev_id == chunk_id - 1 and prev_score > score and prev_score > 0.5:
-                adjacent.add(chunk_id)
-        
-        # Check next neighbor
-        if i < len(sorted_chunks) - 1:
-            next_id, next_score = sorted_chunks[i+1]
-            if next_id == chunk_id + 1 and next_score > score and next_score > 0.5:
-                adjacent.add(chunk_id)
-    
-    return adjacent
-
-
-# --- Combined Analysis Function ---
-def process_combined_analysis(full_data):
-    print("-" * 30)
-    print("Starting Analysis: Combining both filters...")
-
-    filtered_data = []
-    
-    # Accumulators for averages
+    filtered_results = []
     rl_scores = []
-    cos_scores = []
+    cos_sim_scores = []
 
-    for entry in full_data:
-        chunks = entry.get('relevant_chunks', [])
+    for item in final_data:
+        query = item['query']
         
-        is_isolated = has_isolated_chunks(chunks)
-        has_long_seq = has_long_consecutive_sequence(chunks)
-
-        # KEEP the query if it is NOT isolated AND does NOT have a long sequence
-        if not is_isolated and not has_long_seq:
-            filtered_data.append(entry)
-            
-            # Collect scores
-            if entry.get('rl_f1_score') is not None:
-                rl_scores.append(entry['rl_f1_score'])
-            if entry.get('cos_sim_f1_score') is not None:
-                cos_scores.append(entry['cos_sim_f1_score'])
-
-    count = len(filtered_data)
-    print(f"Total Queries (Merged):                       {len(full_data)}")
-    print(f"NO isolated chunks and NO long sequences:     {count}")
-
-    if count > 0:
-        avg_rl = sum(rl_scores) / len(rl_scores) if rl_scores else 0
-        avg_cos = sum(cos_scores) / len(cos_scores) if cos_scores else 0
+        # Identify keys in chunk_relevant_portion above threshold
+        keys_to_remove = set()
+        for chunk_dict in item['chunk_relevant_portion']:
+            for key, value in chunk_dict.items():
+                if value >= completeness_threshold:
+                    keys_to_remove.add(key)
         
-        print("-" * 30)
-        print(f"Average RL F1 Score:       {avg_rl:.4f}")
-        print(f"Average CosSim F1 Score:   {avg_cos:.4f}")
-        print("-" * 30)
-    else:
-        print("No queries matched the criteria.")
+        # Remove identified keys from chunk_relevant_portion and relevant_paragraph_origin
+        chunk_relevant_portion_filtered = [
+            {k: v for k, v in chunk_dict.items() if k not in keys_to_remove}
+            for chunk_dict in item['chunk_relevant_portion']
+        ]
+        chunk_relevant_portion_filtered = [d for d in chunk_relevant_portion_filtered if d]
+        
+        relevant_paragraph_origin_filtered = {
+            k: v for k, v in item['relevant_paragraph_origin'].items()
+            if k not in keys_to_remove
+        }
 
-    return filtered_data
+        chunks_to_remove = [float(x) for x in keys_to_remove]
 
-def get_retrieved_chunks_set(retrieved_list):
-    """Extract chunk IDs from retrieved chunks list."""
-    chunks = set()
-    if not retrieved_list:
-        return chunks
-    
-    for item in retrieved_list:
-        if isinstance(item, dict):
-            for k in item.keys():
-                try:
-                    chunks.add(int(k))
-                except (ValueError, TypeError):
-                    continue
-        elif isinstance(item, (int, str)):
-            try:
-                chunks.add(int(item))
-            except (ValueError, TypeError):
-                continue
-    
-    return chunks
-
-
-def analyze_adjacent_chunks(filtered_data):
-    """
-    Analyze CosSim errors (FP and FN) and how many were corrected by RL model.
-    """
-    print("\n" + "=" * 60)
-    print("COSIM ERRORS ANALYSIS - RL MODEL CORRECTIONS")
-    print("=" * 60)
-    
-    results = []
-    
-    # Metrics for CosSim errors
-    cos_fp_total = 0  # False positives (retrieved but not relevant)
-    cos_fp_rl_correct = 0  # RL correctly didn't take it
-    
-    cos_fn_total = 0  # False negatives (relevant but not retrieved)
-    cos_fn_rl_correct = 0  # RL correctly took it
-    
-    for entry in filtered_data:
-        query = entry.get('query', '')
-        chunks_list = entry.get('relevant_chunks', [])
+        remaining_chunks = set(int(k) for k in relevant_paragraph_origin_filtered.keys())
         
-        # Get all relevant chunk IDs
-        relevant_chunks = set()
-        for item in chunks_list:
-            for k in item.keys():
-                try:
-                    relevant_chunks.add(int(k))
-                except (ValueError, TypeError):
-                    continue
+        # Filter the lists
+        rl_model_retrieved_filtered = [
+            chunk_id for chunk_id in item['rl_model_retrieved']
+            if chunk_id not in chunks_to_remove
+        ]
         
-        # Get retrieved chunks from both models
-        rl_retrieved = get_retrieved_chunks_set(entry.get('rl_model_retrieved', []))
-        cos_retrieved = get_retrieved_chunks_set(entry.get('cos_sim_retrieved_chunks', []))
+        cos_sim_retrieved_chunks_filtered = [
+            chunk_id for chunk_id in item['cos_sim_retrieved_chunks']
+            if chunk_id not in chunks_to_remove
+        ]
         
-        # Find CosSim False Positives (retrieved but not relevant)
-        cos_fp = cos_retrieved - relevant_chunks
+        relevant_chunks_filtered = [
+            chunk_id for chunk_id in item['relevant_chunks']
+            if chunk_id not in chunks_to_remove
+        ]
         
-        # Find CosSim False Negatives (relevant but not retrieved)
-        cos_fn = relevant_chunks - cos_retrieved
+        # Calculate new F1 scores
+        # Create binary vectors for F1 calculation
+        all_chunks = sorted(list(remaining_chunks))
         
-        query_result = {
-            'query': query,
-            'cos_false_positives': [],
-            'cos_false_negatives': []
+        rl_retrieved_binary = [1 if chunk in rl_model_retrieved_filtered else 0 for chunk in all_chunks]
+        cos_sim_retrieved_binary = [1 if chunk in cos_sim_retrieved_chunks_filtered else 0 for chunk in all_chunks]
+        relevant_binary = [1 if chunk in relevant_chunks_filtered else 0 for chunk in all_chunks]
+        
+        rl_f1 = f1_score(relevant_binary, rl_retrieved_binary, zero_division=0)
+        cos_sim_f1 = f1_score(relevant_binary, cos_sim_retrieved_binary, zero_division=0)
+        
+        rl_scores.append(rl_f1)
+        cos_sim_scores.append(cos_sim_f1)
+        
+        # Create filtered item
+        filtered_item = {
+            "page_id": item['page_id'],
+            "query": item['query'],
+            "rl_f1_score": rl_f1,
+            "cos_sim_f1_score": cos_sim_f1,
+            "rl_model_retrieved": rl_model_retrieved_filtered,
+            "cos_sim_retrieved_chunks": cos_sim_retrieved_chunks_filtered,
+            "relevant_chunks": relevant_chunks_filtered,
+            "relevant_paragraph_origin": relevant_paragraph_origin_filtered,
+            "chunk_relevant_portion": chunk_relevant_portion_filtered
         }
         
-        # Analyze False Positives
-        for chunk_id in cos_fp:
-            cos_fp_total += 1
-            rl_correct = chunk_id not in rl_retrieved
-            
-            if rl_correct:
-                cos_fp_rl_correct += 1
-            
-            query_result['cos_false_positives'].append({
-                'chunk_id': chunk_id,
-                'rl_corrected': rl_correct
-            })
-        
-        # Analyze False Negatives
-        for chunk_id in cos_fn:
-            cos_fn_total += 1
-            rl_correct = chunk_id in rl_retrieved
-            
-            if rl_correct:
-                cos_fn_rl_correct += 1
-            
-            query_result['cos_false_negatives'].append({
-                'chunk_id': chunk_id,
-                'rl_corrected': rl_correct
-            })
-        
-        # Only add to results if there were errors
-        if query_result['cos_false_positives'] or query_result['cos_false_negatives']:
-            results.append(query_result)
-    
-    # Print summary
-    print(f"\nCosSim FALSE POSITIVES (retrieved but not relevant):")
-    print(f"  Total: {cos_fp_total}")
-    if cos_fp_total > 0:
-        pct = (cos_fp_rl_correct / cos_fp_total) * 100
-        print(f"  RL Model corrected: {cos_fp_rl_correct} ({pct:.2f}%)")
-    else:
-        print(f"  RL Model corrected: 0 (0.00%)")
-    
-    print(f"\nCosSim FALSE NEGATIVES (relevant but not retrieved):")
-    print(f"  Total: {cos_fn_total}")
-    if cos_fn_total > 0:
-        pct = (cos_fn_rl_correct / cos_fn_total) * 100
-        print(f"  RL Model corrected: {cos_fn_rl_correct} ({pct:.2f}%)")
-    else:
-        print(f"  RL Model corrected: 0 (0.00%)")
-    
-    print("\n" + "=" * 60)
-    
-    summary = {
-        'cosSim_false_positives': {
-            'total': cos_fp_total,
-            'rl_corrected': cos_fp_rl_correct,
-            'rl_correction_rate': (cos_fp_rl_correct / cos_fp_total * 100) if cos_fp_total > 0 else 0
-        },
-        'cosSim_false_negatives': {
-            'total': cos_fn_total,
-            'rl_corrected': cos_fn_rl_correct,
-            'rl_correction_rate': (cos_fn_rl_correct / cos_fn_total * 100) if cos_fn_total > 0 else 0
-        },
-        'detailed_results': results
-    }
-    
-    return summary
+        filtered_results.append(filtered_item)
 
+    print(f"\nProcessing Complete!")
+    print(f"Total queries: {len(final_data)}")
+    print(f"Queries retained: {len(filtered_results)}")
+    print(f"Queries dropped: {len(final_data) - len(filtered_results)}")
+    print(f"\nAverage RL F1 Score: {sum(rl_scores) / len(rl_scores):.4f}" if rl_scores else "No queries retained")
+    print(f"Average Cos-Sim F1 Score: {sum(cos_sim_scores) / len(cos_sim_scores):.4f}" if cos_sim_scores else "No queries retained")
 
-def analyze_rl_errors_cossim_correction(filtered_data):
-    """
-    Analyze RL Model errors (FP and FN) and how many were corrected by CosSim.
-    """
-    print("\n" + "=" * 60)
-    print("RL MODEL ERRORS ANALYSIS - COSSIM CORRECTIONS")
-    print("=" * 60)
-    
-    results = []
-    
-    # Metrics for RL errors
-    rl_fp_total = 0  # False positives (RL retrieved but not relevant)
-    rl_fp_cos_correct = 0  # CosSim correctly didn't take it
-    
-    rl_fn_total = 0  # False negatives (relevant but RL didn't retrieve)
-    rl_fn_cos_correct = 0  # CosSim correctly took it
-    
-    for entry in filtered_data:
-        query = entry.get('query', '')
-        chunks_list = entry.get('relevant_chunks', [])
-        
-        # Get all relevant chunk IDs
-        relevant_chunks = set()
-        for item in chunks_list:
-            for k in item.keys():
-                try:
-                    relevant_chunks.add(int(k))
-                except (ValueError, TypeError):
-                    continue
-        
-        # Get retrieved chunks from both models
-        rl_retrieved = get_retrieved_chunks_set(entry.get('rl_model_retrieved', []))
-        cos_retrieved = get_retrieved_chunks_set(entry.get('cos_sim_retrieved_chunks', []))
-        
-        # Find RL False Positives (retrieved by RL but not relevant)
-        rl_fp = rl_retrieved - relevant_chunks
-        
-        # Find RL False Negatives (relevant but not retrieved by RL)
-        rl_fn = relevant_chunks - rl_retrieved
-        
-        query_result = {
-            'query': query,
-            'rl_false_positives': [],
-            'rl_false_negatives': []
-        }
-        
-        # Analyze RL False Positives
-        for chunk_id in rl_fp:
-            rl_fp_total += 1
-            # CosSim is correct if it did NOT retrieve this irrelevant chunk
-            cos_correct = chunk_id not in cos_retrieved
-            
-            if cos_correct:
-                rl_fp_cos_correct += 1
-            
-            query_result['rl_false_positives'].append({
-                'chunk_id': chunk_id,
-                'cossim_corrected': cos_correct
-            })
-        
-        # Analyze RL False Negatives
-        for chunk_id in rl_fn:
-            rl_fn_total += 1
-            # CosSim is correct if it DID retrieve this relevant chunk
-            cos_correct = chunk_id in cos_retrieved
-            
-            if cos_correct:
-                rl_fn_cos_correct += 1
-            
-            query_result['rl_false_negatives'].append({
-                'chunk_id': chunk_id,
-                'cossim_corrected': cos_correct
-            })
-        
-        # Only add to results if there were errors
-        if query_result['rl_false_positives'] or query_result['rl_false_negatives']:
-            results.append(query_result)
-    
-    # Print summary
-    print(f"\nRL Model FALSE POSITIVES (retrieved but not relevant):")
-    print(f"  Total: {rl_fp_total}")
-    if rl_fp_total > 0:
-        pct = (rl_fp_cos_correct / rl_fp_total) * 100
-        print(f"  CosSim corrected: {rl_fp_cos_correct} ({pct:.2f}%)")
-    else:
-        print(f"  CosSim corrected: 0 (0.00%)")
-    
-    print(f"\nRL Model FALSE NEGATIVES (relevant but not retrieved):")
-    print(f"  Total: {rl_fn_total}")
-    if rl_fn_total > 0:
-        pct = (rl_fn_cos_correct / rl_fn_total) * 100
-        print(f"  CosSim corrected: {rl_fn_cos_correct} ({pct:.2f}%)")
-    else:
-        print(f"  CosSim corrected: 0 (0.00%)")
-    
-    print("\n" + "=" * 60)
-    
-    summary = {
-        'rl_false_positives': {
-            'total': rl_fp_total,
-            'cos_corrected': rl_fp_cos_correct,
-            'cos_correction_rate': (rl_fp_cos_correct / rl_fp_total * 100) if rl_fp_total > 0 else 0
-        },
-        'rl_false_negatives': {
-            'total': rl_fn_total,
-            'cos_corrected': rl_fn_cos_correct,
-            'cos_correction_rate': (rl_fn_cos_correct / rl_fn_total * 100) if rl_fn_total > 0 else 0
-        },
-        'detailed_results': results
-    }
-    
-    return summary
+    return filtered_results
 
 
 if __name__ == "__main__":
@@ -464,25 +164,10 @@ if __name__ == "__main__":
         json.dump(final_data, f, indent=4)
     print(f"Original merged data saved to {OUTPUT_MERGED}")
 
-    # 2. Apply Combined Filter and Analyze
-    filtered_results = process_combined_analysis(final_data)
+    completeness_threshold = 1.1
 
-    # 3. Save New Filtered Export
-    if filtered_results:
-        os.makedirs(os.path.dirname(OUTPUT_COMBINED_FILTER), exist_ok=True)
-        with open(OUTPUT_COMBINED_FILTER, 'w') as f:
-            json.dump(filtered_results, f, indent=4)
-        print(f"Combined filter results saved to {OUTPUT_COMBINED_FILTER}")
-    else:
-        print("No results matched all criteria; file not created.")
-    
-    # 4. Analyze Adjacent Chunks
-    if filtered_results:
-        adjacent_analysis = analyze_adjacent_chunks(filtered_results)
-        
-        os.makedirs(os.path.dirname(OUTPUT_ADJACENT_ANALYSIS), exist_ok=True)
-        with open(OUTPUT_ADJACENT_ANALYSIS, 'w') as f:
-            json.dump(adjacent_analysis, f, indent=4)
-        print(f"\nAdjacent chunks analysis saved to {OUTPUT_ADJACENT_ANALYSIS}")
+    filtered_results = process_all_queries(final_data, completeness_threshold)
 
-        _ = analyze_rl_errors_cossim_correction(filtered_results)
+    with open('data_analysis/filtered_results.json', 'w') as f:
+        json.dump(filtered_results, f, indent=2)
+
