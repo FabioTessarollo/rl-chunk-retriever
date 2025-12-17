@@ -229,7 +229,7 @@ def main():
     fair_query_ids, superdifficult_query_ids = data.get_query_ids_by_difficulty()
 
     # Split data into training and validation sets
-    training_set, validation_set = data.balanced_split_query_ids(fair_query_ids, 1)
+    training_set, validation_set = data.balanced_split_query_ids(fair_query_ids, 0.8)
     
     print(f"Training queries: {len(training_set)}")
     print(f"Validation queries: {len(validation_set)}")
@@ -245,11 +245,11 @@ def main():
     print(f"F1 Score: {train_f1:.4f}")
     
     # Evaluate on validation set with optimal threshold
-    # print(f"\n=== Validation Set Results (Threshold: {optimal_threshold:.3f}) ===")
-    # val_recall, val_precision, val_f1 = evaluate_with_threshold(data, validation_set, optimal_threshold, device)
-    # print(f"Recall: {val_recall:.4f}")
-    # print(f"Precision: {val_precision:.4f}")
-    # print(f"F1 Score: {val_f1:.4f}")
+    print(f"\n=== Validation Set Results (Threshold: {optimal_threshold:.3f}) ===")
+    val_recall, val_precision, val_f1, _ = evaluate_with_threshold(data, validation_set, optimal_threshold, device)
+    print(f"Recall: {val_recall:.4f}")
+    print(f"Precision: {val_precision:.4f}")
+    print(f"F1 Score: {val_f1:.4f}")
 
     # Evaluate on test set with optimal threshold
     print(f"\n=== Test Set Results (Threshold: {optimal_threshold:.3f}) ===")
@@ -259,30 +259,30 @@ def main():
     print(f"F1 Score: {val_f1:.4f}")
     
     # Get rankings for all queries using optimal threshold
-    print(f"\nGenerating rankings with optimal threshold...")
+    #print(f"\nGenerating rankings with optimal threshold...")
     top_k = 40
     threshold = 0.77
-    all_rankings, single_similarities, double_similarities = get_rankings_with_threshold(data, data.query_ids, threshold, device, top_k,n_examples)
+    #all_rankings, single_similarities, double_similarities = get_rankings_with_threshold(data, data.query_ids, threshold, device, top_k,n_examples)
 
-    all_rankings_test, _, _ = get_rankings_with_threshold(data_test, data_test.query_ids, threshold, device, top_k,n_examples)
+    #all_rankings_test, _, _ = get_rankings_with_threshold(data_test, data_test.query_ids, threshold, device, top_k,n_examples)
 
 
     # Create output directory if it doesn't exist
     output_dir = "data_chunks_cos_sim"
-    os.makedirs(output_dir, exist_ok=True)
+    # os.makedirs(output_dir, exist_ok=True)
 
     # Save to JSON files
-    output_file = os.path.join(output_dir, "cosine_sim_rank_threshold_only_single.json")
-    with open(output_file, 'w') as f:
-        json.dump(all_rankings, f, indent=2)
+    # output_file = os.path.join(output_dir, "cosine_sim_rank_threshold_only_single.json")
+    # with open(output_file, 'w') as f:
+    #     json.dump(all_rankings, f, indent=2)
 
-    output_file = os.path.join(output_dir, "cosine_sim_rank_retrieved_test_single.json") #cosine_sim_rank_threshold_test
-    with open(output_file, 'w') as f:
-        json.dump(cosine_sim_results, f, indent=2)
+    # output_file = os.path.join(output_dir, "cosine_sim_rank_retrieved_test_single.json") #cosine_sim_rank_threshold_test
+    # with open(output_file, 'w') as f:
+    #     json.dump(cosine_sim_results, f, indent=2)
 
-    output_file = os.path.join(output_dir, "cosine_sim_rank_threshold_only_single_test.json")
-    with open(output_file, 'w') as f:
-        json.dump(all_rankings_test, f, indent=2)
+    # output_file = os.path.join(output_dir, "cosine_sim_rank_threshold_only_single_test.json")
+    # with open(output_file, 'w') as f:
+    #     json.dump(all_rankings_test, f, indent=2)
 
     # output_file = os.path.join(output_dir, "single_similarities.json")
     # with open(output_file, 'w') as f:

@@ -213,7 +213,7 @@ if __name__ == "__main__":
     print(f"Average Cosine Similarity F1 Score: {metrics['avg_cos_sim_f1_score']:.6f}")
     print(f"{'='*50}")
 
-    completeness_threshold = 0.3
+    completeness_threshold = 1.1
 
     filtered_results = process_all_queries(final_data, completeness_threshold)
 
