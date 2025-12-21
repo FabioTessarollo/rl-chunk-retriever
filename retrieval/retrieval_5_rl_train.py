@@ -8,68 +8,15 @@ from datetime import datetime
 import argparse
 import matplotlib.pyplot as plt
 
-from Data import Data
-from Topic import Topic
-from DuelingDQN import DuelingDQN
-from ReplayBuffer import PrioritizedReplayBuffer
-from EarlyStopping import EarlyStopping
-
+from retrieval.Data import Data
+from retrieval.Topic import Topic
+from retrieval.DuelingDQN import DuelingDQN
+from retrieval.ReplayBuffer import PrioritizedReplayBuffer
+from retrieval.EarlyStopping import EarlyStopping
 
 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 random.seed(1)
 torch.manual_seed(1)
-
-def print_branch_importance(model, proj_dim):
-    # ---- Branch importance (fc1) ----
-    W = model.fc1.weight.detach().cpu()
-
-    W_single = W[:, 0:proj_dim]
-    W_double = W[:, proj_dim:2*proj_dim]
-    W_query  = W[:, 2*proj_dim:3*proj_dim]
-    W_bag    = W[:, 3*proj_dim:4*proj_dim]
-
-    norms = {
-        "single_chunk": torch.norm(W_single).item(),
-        "double_chunk": torch.norm(W_double).item(),
-        "query": torch.norm(W_query).item(),
-        "bag": torch.norm(W_bag).item(),
-    }
-
-    total = sum(norms.values())
-    rel = {k: v/total for k, v in norms.items()}
-
-    print("Branch weight norms (absolute):")
-    for k, v in norms.items():
-        print(f"  {k:>12}: {v:.4f}")
-
-    print("\nBranch relative importance (normalized):")
-    for k, v in rel.items():
-        print(f"  {k:>12}: {100*v:.2f}%")
-
-    # ---- Metadata neuron importance in advantage stream ----
-    W_adv = model.adv_out.weight.detach().cpu()  # shape: (action_dim, 64 + metadata_dim)
-
-    hidden_weights = W_adv[:, :64]                     # (action_dim, 64)
-    metadata_weights = W_adv[:, 64:]                   # (action_dim, metadata_dim)
-
-    hidden_norms = torch.norm(hidden_weights, dim=0)   # (64,)
-    metadata_norms = torch.norm(metadata_weights, dim=0)  # (metadata_dim,)
-
-    # totals
-    total_hidden = hidden_norms.sum().item()
-    total_meta = metadata_norms.sum().item()
-
-    # normalize metadata importances (relative only among metadata)
-    rel_meta = metadata_norms / total_meta if total_meta > 0 else metadata_norms
-
-    print("\nAdvantage stream metadata neuron importances:")
-    for i, (abs_val, rel_val) in enumerate(zip(metadata_norms.tolist(), rel_meta.tolist()), 1):
-        print(f"  metadata_{i:02d}: abs={abs_val:.4f}, rel={100*rel_val:.2f}%")
-
-    print(f"\nTotal hidden neurons importance (sum abs norms): {total_hidden:.4f}")
-    print(f"Average hidden neuron importance (abs norm): {hidden_norms.mean().item():.4f}")
-    print(f"Total metadata neurons importance (sum abs norms): {total_meta:.4f}")
-
 
 def evaluate(data, query_ids, online_net, device, max_exp_loops):
     """Evaluate the model on validation set without training"""
@@ -79,15 +26,13 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
     for query_id in query_ids:
         query = data.get_query_obj_from_id(query_id)
         page_id = query.get("page_id")
-        page, page_even, page_odd = data.get_page_chunks_dict(page_id)
+        page = data.get_page_chunks_dict(page_id)
         query_emb = torch.tensor(query.get("query")).to(device)
         relevant_chunks = query.get("relevant_chunks")
         ranked_chunks = data.cosine_sim_rank[str(query_id)]
         query_desc = query.get("query_desc")
-        #single_sims = data.get_sims_single_from_query_id(query_id)
-        #double_sims = data.get_sims_double_from_query_id(query_id)
 
-        topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exp_loops)#, single_sims, double_sims)
+        topic = Topic(query_emb, page, ranked_chunks, relevant_chunks, max_exp_loops)
 
         state_emb, state_meta, _, _ = topic.get_initial_step()
         state_emb = state_emb.to(device)
@@ -135,100 +80,42 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
     
     return avg_val_reward, avg_val_f1_score
 
-def main():
+def train(split):
     pages_path = "data_chunks_emb/pages_chunked_emb_train.json"
-    pages_doub_even_path = "data_chunks_emb/pages_doub_chunked_even_train.json"
-    pages_doub_odd_path = "data_chunks_emb/pages_doub_chunked_odd_train.json"
     relevant_path = "data_chunks_emb/relevant_chunks_emb_train.json"
-    cosine_sim_path = "data_chunks_cos_sim/cosine_sim_rank_threshold_only_single.json" #_threshold
-    single_similarities = "data_chunks_cos_sim/single_similarities.json"
-    double_similarities = "data_chunks_cos_sim/double_similarities.json"
+    cosine_sim_path = "data_chunks_cos_sim/cosine_sim_rank_threshold_only_single.json"
 
-    pages_path_test = f"data_chunks_emb/pages_chunked_emb_test.json"
-    pages_doub_even_path_test = f"data_chunks_emb/pages_doub_chunked_even_test.json"
-    pages_doub_odd_path_test = f"data_chunks_emb/pages_doub_chunked_odd_test.json"
-    relevant_path_test = f"data_chunks_emb/relevant_chunks_emb_test.json"
-    cosine_sim_path_test = "data_chunks_cos_sim/cosine_sim_rank_threshold_only_single_test.json" #_threshold
-
-    data = Data(pages_path, relevant_path, pages_doub_even_path, pages_doub_odd_path, cosine_sim_path, single_similarities, double_similarities)
+    data = Data(pages_path, relevant_path, cosine_sim_path)
     data.load_pages()
-    data.load_pages_even()
-    data.load_pages_odd()
     data.load_relevant()
     data.load_cosine_sim()
-    data.load_single_sims()
-    data.load_double_sims()
 
-    data_test = Data(pages_path_test, relevant_path_test, pages_doub_even_path_test, pages_doub_odd_path_test, cosine_sim_path_test)
-    data_test.load_pages()
-    data_test.load_pages_even()
-    data_test.load_pages_odd()
-    data_test.load_relevant()
-    data_test.load_cosine_sim()
-
-    #fair_query_ids, superdifficult_query_ids = data.get_query_ids_by_difficulty()
-
-    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 1) #0.8
+    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, split) #0.8
 
     best_score = 0
     proj_dim = 256
     metadata_dim = 9
     epsilon = 1.0
 
-    # TO DO
-    # try removing the / in between before embedding
-    # passing metadata earlier
-    # curriculum learning by epoches
-    # reduce PER BETA to lower biased sampling on difficult data
-    # TD3
-    # starting with some weights
-    # dividere la similarità per la sim media
-    # provare reward negativo skip solo dopo il primo loop
-    # provare a non includere il submit nelle azioni random
-    # more epoches with the 0 reward for bad skip in first loop
+    proj_dim = 512
+    gamma = 0.99
+    epsilon_min = 0.01
+    epsilon_decay = 0.99995
+    batch_size = 32
+    replay_capacity = 50000
+    lr = 1e-5
+    target_update = 5000
+    epochs = 200
+    max_exp_loops = 1
+    action_dim = 5
+    dropout_p = 0
+    scheduler_type = "cosine"
+    per_alpha = 0.6
+    per_beta = 0.4
+    per_beta_increment = 0.001
+    eta_min = 0.000001
 
-    parser = argparse.ArgumentParser()
-
-    parser.add_argument("--proj_dim", type=int, default=256)
-    parser.add_argument("--gamma", type=float, default=0.99) #0.99
-    parser.add_argument("--epsilon_min", type=float, default=0.01)
-    parser.add_argument("--epsilon_decay", type=float, default=0.99993)
-    parser.add_argument("--batch_size", type=int, default=64)
-    parser.add_argument("--replay_capacity", type=int, default=10000)
-    parser.add_argument("--lr", type=float, default=0.0005)
-    parser.add_argument("--target_update", type=int, default=100)
-    parser.add_argument("--epochs", type=int, default=80)
-    parser.add_argument("--max_exp_loops", type=int, default=3) #3
-    parser.add_argument("--action_dim", type=int, default=4) #4
-    parser.add_argument("--dropout_p", type=float, default=0)
-
-    parser.add_argument("--scheduler_type", default="plateau") # Options: "step", "cosine", "exponential", "plateau"
-    parser.add_argument("--per_alpha", type=float, default=0.6)
-    parser.add_argument("--per_beta", type=float, default=0.4)
-    parser.add_argument("--per_beta_increment", type=float, default=0.001)
-
-    args = parser.parse_args()
-
-    proj_dim, gamma, epsilon_min, epsilon_decay, batch_size, replay_capacity, lr, target_update, epochs, max_exp_loops, action_dim, scheduler_type, per_alpha, per_beta, per_beta_increment, dropout_p = \
-        args.proj_dim, args.gamma, args.epsilon_min, args.epsilon_decay, args.batch_size, args.replay_capacity, args.lr, args.target_update, args.epochs, args.max_exp_loops, args.action_dim, args.scheduler_type, args.per_alpha, args.per_beta, args.per_beta_increment, args.dropout_p
-
-    # Scheduler hyperparameters
-    step_size = 10  # For StepLR
-    gamma_scheduler = 0.9  # For StepLR and ExponentialLR
-    eta_min = 0.000001  # For CosineAnnealingLR 1e-5
-    patience = 7  # For ReduceLROnPlateau #5 
-    factor = 0.5  # For ReduceLROnPlateau
-
-    # PER hyperparameters
-    per_alpha = 0.6      # Prioritization exponent #0.6
-    per_beta = 0.4       # Importance sampling correction
-    per_beta_increment = 0.001  # Beta annealing rate
-
-    # Early Stopping
-    es = EarlyStopping(patience=12, delta_ratio=0.001)
-    # patience = 15
-    # no_improv_epoches = 0
-    # best_validation_score = 0
+    es = EarlyStopping(patience=10, delta_ratio=0.001) #12? #15? #10?
 
     # Set device
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -239,20 +126,7 @@ def main():
     target_net.load_state_dict(online_net.state_dict())
     optimizer = optim.Adam(online_net.parameters(), lr=lr) #, weight_decay=1e-5)
 
-        # Initialize scheduler
-    if scheduler_type == "step":
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=step_size, gamma=gamma_scheduler)
-    elif scheduler_type == "cosine":
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200, eta_min=eta_min) #tmax epochs 
-    elif scheduler_type == "exponential":
-        scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma_scheduler)
-    elif scheduler_type == "plateau":
-        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=factor, 
-                                                       patience=patience)
-    elif scheduler_type == "dedicated":
-        factor = 0.75
-        epoch_start = 96
-        scheduler = ''
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200, eta_min=eta_min)
       
     replay = PrioritizedReplayBuffer(
         capacity=replay_capacity, 
@@ -270,7 +144,6 @@ def main():
     step_count = 0
     train_f1_scores = []
     val_f1_scores = []
-    loss_scores = []
     for epoch in range(epochs):
         online_net.train()
         epoch_reward = 0
@@ -286,7 +159,7 @@ def main():
         for query_id in train_set:
             query = data.get_query_obj_from_id(query_id)
             page_id = query.get("page_id")
-            page, page_even, page_odd = data.get_page_chunks_dict(page_id)
+            page = data.get_page_chunks_dict(page_id)
             query_emb = torch.tensor(query.get("query")).to(device)
             query_desc = query.get("query_desc")
             relevant_chunks = query.get("relevant_chunks")
@@ -294,7 +167,7 @@ def main():
             single_sims = data.get_sims_single_from_query_id(query_id)
             double_sims = data.get_sims_double_from_query_id(query_id)
 
-            topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exp_loops, single_sims, double_sims)
+            topic = Topic(query_emb, page, ranked_chunks, relevant_chunks, max_exp_loops, single_sims, double_sims)
 
             state_emb, state_meta, _, _ = topic.get_initial_step()
             state_emb = state_emb.to(device)
@@ -380,7 +253,6 @@ def main():
                 
                 if step_count % target_update == 0:
                     target_net.load_state_dict(online_net.state_dict())
-                    loss_scores.append(loss.item())
                     logging.info(f"Target network updated at global step {step_count}")
                     
             epoch_reward += episode_reward
@@ -396,67 +268,33 @@ def main():
         logging.info(f"Epoch: {epoch}, Average Reward: {avg_epoch_reward:.4f}, Average F1: {avg_epoch_f1_score:.4f}, Epsilon: {epsilon:.4f}")
         print(f"Average Reward: {avg_epoch_reward:.4f}, Average F1: {avg_epoch_f1_score:.4f}")
 
-        # Step the scheduler
         scheduler.step()
 
-        # VALIDATION SET GREEDY
-        # 23
-
+        # Greedy evaluation
         online_net.eval()
 
-        # TRAIN SET GREEDY
-        # avg_train_reward, avg_train_f1_score = evaluate(
-        #     data, train_set, online_net, device, 
-        #     max_exp_loops
-        # )
-        # logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
-        # print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
-        # train_f1_scores.append(avg_train_f1_score)
+        avg_train_reward, avg_train_f1_score = evaluate(
+            data, train_set, online_net, device, 
+            max_exp_loops
+        )
+        logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
+        print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
+        train_f1_scores.append(avg_train_f1_score)
 
-        # avg_val_reward, avg_val_f1_score = evaluate(
-        #     data, validation_set, online_net, device, 
-        #     max_exp_loops
-        # )
-        # logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
-        # print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
-        # val_f1_scores.append(avg_val_f1_score)
-
-        if epoch == 40:
-            break
-
-            # Early stopping
-        # if es.step(avg_val_f1_score):
-        #     print(f"Early stopping at epoch {epoch}")
-        #     break
+        if split < 1:
+            avg_val_reward, avg_val_f1_score = evaluate(
+                data, validation_set, online_net, device, 
+                max_exp_loops
+            )
+            logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
+            print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
+            val_f1_scores.append(avg_val_f1_score)
 
     extra_logger.info(f"{now_str}\t{proj_dim}\t{gamma}\t{epsilon_min}\t{epsilon_decay}\t{batch_size}\t{replay_capacity}\t{lr}\t{target_update}\t{epochs}\t{max_exp_loops}\t{action_dim}\t{scheduler_type}\t{per_alpha}\t{per_beta}\t{per_beta_increment}\t{dropout_p}\t{best_score:.4f}")
-    
-    print_branch_importance(online_net, proj_dim)
     
     plt.plot(train_f1_scores, label='train')
     plt.plot(val_f1_scores, label='val')
     plt.legend()
     plt.savefig('train_vs_val.png')
 
-    plt.plot(loss_scores, label='loss')
-    plt.legend()
-    plt.savefig('loss.png')
-
-    torch.save(online_net.state_dict(), "models/rl-chunk-retriever_2.pt")
-
-    # TEST SET GREEDY
-    print("TEST")
-
-    model = DuelingDQN(metadata_dim, action_dim, proj_dim, dropout_p).to(device)
-    model.load_state_dict(torch.load("models/rl-chunk-retriever_2.pt", map_location="cpu"))
-    model.eval()
-
-    avg_val_reward, avg_val_f1_score = evaluate(
-        data_test, data_test.query_ids, model, device, 
-        max_exp_loops
-    )
-    logging.info(f"GREEDY: TEST Reward: {avg_val_reward:.4f}, TEST F1: {avg_val_f1_score:.4f}")
-    print(f"GREEDY: TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
-
-if __name__ == "__main__":
-    main()
+    torch.save(online_net.state_dict(), "models/rl-chunk-retriever.pt")

@@ -2,17 +2,14 @@ import torch
 
 class Topic:
 
-    def __init__(self, query_emb, page_chunks_dict, page_even_chunks_dict, page_odd_chunks_dict, ranked_chunks, relevant_chunks, max_exp_loops, single_sims=None, double_sims=None):
+    def __init__(self, query_emb, page_chunks_dict, ranked_chunks, relevant_chunks, max_exp_loops):
         self.current_rank_chunk = 0 # rank position of the current chunk - to navigate the rank
         self.current_chunk_id = 0 # chunk id value of the current chunk - to navigate the page
         self.query_emb = query_emb
         self.page_chunks_dict = page_chunks_dict
-        self.page_even_chunks_dict = page_even_chunks_dict #double embeddings
-        self.page_odd_chunks_dict = page_odd_chunks_dict #double embeddings
         self.ranked_chunks = ranked_chunks
         self.relevant_chunks = relevant_chunks
         self.bag_of_chunks = []
-        self.actions_taken = {'sk': 0, 'ts': 0, 'td': 0, 'su': 0}
         self.done = False
         self.max_chunk_id = max(page_chunks_dict.keys())
         self.f1_score = 0
@@ -20,12 +17,9 @@ class Topic:
         self.bag_of_chunks_embedding = torch.zeros(len(query_emb), dtype=torch.float32, device = self.device)
         self.current_loop = 0
         self.max_exp_loops = max_exp_loops
-        self.single_sims = single_sims
-        self.double_sims = double_sims
         self.single_chunk_emb = None
         self.double_chunk_emb = None
         self.prev_double_chunk_emb = None
-        self.skips = 0
 
     def cos_sim_norm(self, v1, v2):
         sim = torch.nn.functional.cosine_similarity(v1.unsqueeze(0), v2.unsqueeze(0))
@@ -39,7 +33,6 @@ class Topic:
         return sim
     
     def get_state_metadata(self):
-        #add similarity metrics?
         rank_position = (self.current_rank_chunk + 1)  / len(self.ranked_chunks)
         remaining_loops = (self.current_loop + 1) / self.max_exp_loops
         single_chunk_already_in_bag = int(self.current_chunk_id in self.bag_of_chunks)
@@ -49,10 +42,6 @@ class Topic:
         dq_sim = self.cos_sim_norm(self.double_chunk_emb, self.single_chunk_emb)
         bq_sim = self.cos_sim_norm(self.bag_of_chunks_embedding, self.query_emb)
         pdq_sim = self.cos_sim_norm(self.prev_double_chunk_emb, self.single_chunk_emb)
-        #sq_eu_sim = self.euc_sim_norm(self.single_chunk_emb, self.query_emb)
-        #dq_eu_sim = self.euc_sim_norm(self.double_chunk_emb, self.query_emb)
-        #bq_eu_sim = self.euc_sim_norm(self.bag_of_chunks_embedding, self.query_emb)
-        #pdq_eu_sim = self.euc_sim_norm(self.prev_double_chunk_emb, self.query_emb)
         state_metadata = torch.tensor([rank_position, remaining_loops, single_chunk_already_in_bag, next_chunk_already_in_bag, bag_size, sq_sim, dq_sim, bq_sim, pdq_sim], device = self.device)
         return state_metadata
 
@@ -97,16 +86,11 @@ class Topic:
         return state_embedding
 
     def skip(self):
-
-        self.skips += 1
         
-        # point to the current chunk id over the rank
         self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
 
         if self.current_chunk_id in self.relevant_chunks and self.current_chunk_id not in self.bag_of_chunks:
             reward = -1
-            #if self.current_rank_chunk < 3 and self.current_chunk_id not in self.bag_of_chunks:
-            #    reward -= 1 - self.current_rank_chunk/3
         else:
             reward = 1
 
@@ -125,16 +109,11 @@ class Topic:
         state_embedding = self.get_state_embedding()
         state_metadata = self.get_state_metadata()
 
-        self.last_action = 'sk'
-        self.actions_taken['sk'] += 1
-
         return (state_embedding, state_metadata, reward, self.done)
     
     def take_single(self):
 
         self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
-
-        # before_f1_score = self.f1_score
 
         # update bag mean embedding
         if len(self.bag_of_chunks) > 0:
@@ -169,11 +148,6 @@ class Topic:
         # new state
         state_embedding = self.get_state_embedding()
         state_metadata = self.get_state_metadata()
-
-        self.actions_taken['ts'] += 1
-
-        # self.set_f1_score()
-        # reward = self.f1_score - before_f1_score
 
         return (state_embedding, state_metadata, reward/10, self.done)
     
@@ -238,8 +212,6 @@ class Topic:
         state_embedding = self.get_state_embedding()
         state_metadata = self.get_state_metadata()
 
-        self.actions_taken['td'] += 1
-
         # self.set_f1_score()
         # reward = self.f1_score - before_f1_score
 
@@ -303,8 +275,6 @@ class Topic:
         state_embedding = self.get_state_embedding()
         state_metadata = self.get_state_metadata()
 
-        self.actions_taken['td'] += 1
-
         # self.set_f1_score()
         # reward = self.f1_score - before_f1_score
 
@@ -313,8 +283,6 @@ class Topic:
     def submit_current_bag(self):
 
         self.done = True
-
-        self.actions_taken['su'] += 1
 
         self.set_f1_score()
 

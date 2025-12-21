@@ -108,28 +108,13 @@ def process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chu
     with open(relevant_out_path, 'w', encoding='utf-8') as out:
         json.dump(relevant_output, out, ensure_ascii=False, indent=2)
 
-def main():
-    set = 'test'
-    pages_path = f'data_extract/pages_{set}.jsonl'
-    relevant_path = f'data_extract/relevant_paragraphs_{set}.jsonl'
+def chunk_and_label(set, pages_path, relevant_path, chunk_size = 50):
+    
     pages_out_path = f'data_chunks/pages_chunked_{set}.json'
     relevant_out_path = f'data_chunks/relevant_chunks_{set}.json'
-    chunk_size = 50
 
     os.makedirs('data_chunks', exist_ok=True)
     pages_text_map, pages_chunks_map = process_pages(pages_path, pages_out_path, chunk_size)
     process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chunks_map, chunk_size)
 
-    set = 'train'
-    pages_path = f'data_extract/pages_{set}.jsonl'
-    relevant_path = f'data_extract/relevant_paragraphs_{set}.jsonl'
-    pages_out_path = f'data_chunks/pages_chunked_{set}.json'
-    relevant_out_path = f'data_chunks/relevant_chunks_{set}.json'
-    chunk_size = 50
-
-    os.makedirs('data_chunks', exist_ok=True)
-    pages_text_map, pages_chunks_map = process_pages(pages_path, pages_out_path, chunk_size)
-    process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chunks_map, chunk_size)
-
-if __name__ == '__main__':
-    main()
+    return pages_out_path, relevant_out_path

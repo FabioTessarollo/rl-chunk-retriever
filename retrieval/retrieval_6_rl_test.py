@@ -10,11 +10,11 @@ from datetime import datetime
 import argparse
 import matplotlib.pyplot as plt
 
-from Data import Data
-from Topic import Topic
-from DuelingDQN import DuelingDQN
-from ReplayBuffer import PrioritizedReplayBuffer
-from EarlyStopping import EarlyStopping
+from retrieval.Data import Data
+from retrieval.Topic import Topic
+from retrieval.DuelingDQN import DuelingDQN
+from retrieval.ReplayBuffer import PrioritizedReplayBuffer
+from retrieval.EarlyStopping import EarlyStopping
 
 
 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -30,15 +30,13 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
     for query_id in query_ids:
         query = data.get_query_obj_from_id(query_id)
         page_id = query.get("page_id")
-        page, page_even, page_odd = data.get_page_chunks_dict(page_id)
+        page = data.get_page_chunks_dict(page_id)
         query_emb = torch.tensor(query.get("query")).to(device)
         relevant_chunks = query.get("relevant_chunks")
         ranked_chunks = data.cosine_sim_rank[str(query_id)]
         query_desc = query.get("query_desc")
-        #single_sims = data.get_sims_single_from_query_id(query_id)
-        #double_sims = data.get_sims_double_from_query_id(query_id)
 
-        topic = Topic(query_emb, page, page_even, page_odd, ranked_chunks, relevant_chunks, max_exp_loops)#, single_sims, double_sims)
+        topic = Topic(query_emb, page, ranked_chunks, relevant_chunks, max_exp_loops)
 
         state_emb, state_meta, _, _ = topic.get_initial_step()
         state_emb = state_emb.to(device)
@@ -95,43 +93,18 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
 
 def main():
 
-    pages_path = "data_chunks_emb/pages_chunked_emb_train.json"
-    pages_doub_even_path = "data_chunks_emb/pages_doub_chunked_even_train.json"
-    pages_doub_odd_path = "data_chunks_emb/pages_doub_chunked_odd_train.json"
-    relevant_path = "data_chunks_emb/relevant_chunks_emb_train.json"
-    cosine_sim_path = "data_chunks_cos_sim/cosine_sim_rank_threshold_only_single.json" #_threshold
-    single_similarities = "data_chunks_cos_sim/single_similarities.json"
-    double_similarities = "data_chunks_cos_sim/double_similarities.json"
-
     pages_path_test = f"data_chunks_emb/pages_chunked_emb_test.json"
-    pages_doub_even_path_test = f"data_chunks_emb/pages_doub_chunked_even_test.json"
-    pages_doub_odd_path_test = f"data_chunks_emb/pages_doub_chunked_odd_test.json"
     relevant_path_test = f"data_chunks_emb/relevant_chunks_emb_test.json"
-    cosine_sim_path_test = "data_chunks_cos_sim/cosine_sim_rank_threshold_only_single_test.json" #_threshold
+    cosine_sim_path_test = "data_chunks_cos_sim/cosine_sim_rank_threshold_only_single_test.json"
 
-    data = Data(pages_path, relevant_path, pages_doub_even_path, pages_doub_odd_path, cosine_sim_path, single_similarities, double_similarities)
-    data.load_pages()
-    data.load_pages_even()
-    data.load_pages_odd()
-    data.load_relevant()
-    data.load_cosine_sim()
-    data.load_single_sims()
-    data.load_double_sims()
-
-
-    data_test = Data(pages_path_test, relevant_path_test, pages_doub_even_path_test, pages_doub_odd_path_test, cosine_sim_path_test)
+    data_test = Data(pages_path_test, relevant_path_test, cosine_sim_path_test)
     data_test.load_pages()
-    data_test.load_pages_even()
-    data_test.load_pages_odd()
     data_test.load_relevant()
     data_test.load_cosine_sim()
 
     # Set device
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"Using device: {device}")
-
-    # TEST SET GREEDY
-    print("TEST")
 
     model = DuelingDQN(metadata_dim = 9, action_dim = 5, proj_dim = 512, dropout_p = 0).to(device)
     model.load_state_dict(torch.load("models/rl-chunk-retriever.pt", map_location="cpu")) #rl-chunk-retriever copy
@@ -147,7 +120,7 @@ def main():
     output_dir = "data_analysis"
     os.makedirs(output_dir, exist_ok=True)
 
-    output_file = os.path.join(output_dir, "rl_model_retrieved_test_single.json") #cosine_sim_rank_threshold_test
+    output_file = os.path.join(output_dir, "rl_model_retrieved_test_single.json")
     with open(output_file, 'w') as f:
         json.dump(results, f, indent=2)
 
