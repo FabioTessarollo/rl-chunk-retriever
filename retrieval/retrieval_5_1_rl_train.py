@@ -73,24 +73,25 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
         val_reward += episode_reward
         val_f1_score += topic.f1_score
 
-        logging.info(f"GREEDY - Query: {query_desc}, Episode Reward: {episode_reward:.4f}, Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Relevant: {topic.relevant_chunks}, Top_10_Rank: {topic.ranked_chunks[:10]}, Actions: {topic.actions_taken}")
+        logging.info(f"GREEDY - Query: {query_desc}, Episode Reward: {episode_reward:.4f}, Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Relevant: {topic.relevant_chunks}, Top_10_Rank: {topic.ranked_chunks[:10]}")
     
     avg_val_reward = val_reward / len(query_ids)
     avg_val_f1_score = val_f1_score / len(query_ids)
     
     return avg_val_reward, avg_val_f1_score
 
-def train(split):
-    pages_path = "data_chunks_emb/pages_chunked_emb_train.json"
-    relevant_path = "data_chunks_emb/relevant_chunks_emb_train.json"
-    cosine_sim_path = "data_chunks_cos_sim/cosine_sim_rank_threshold_only_single.json"
+def train():
+
+    pages_path = "data_3_embed/pages_chunked_emb_train.json"
+    relevant_path = "data_3_embed/relevant_chunks_emb_train.json"
+    cosine_sim_path = "data_4_cos_sim/cosine_sim_rank_threshold_only_single.json"
 
     data = Data(pages_path, relevant_path, cosine_sim_path)
     data.load_pages()
     data.load_relevant()
     data.load_cosine_sim()
 
-    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, split) #0.8
+    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 0.8)
 
     best_score = 0
     proj_dim = 256
@@ -105,7 +106,7 @@ def train(split):
     replay_capacity = 50000
     lr = 1e-5
     target_update = 5000
-    epochs = 200
+    epochs = 24
     max_exp_loops = 1
     action_dim = 5
     dropout_p = 0
@@ -164,10 +165,8 @@ def train(split):
             query_desc = query.get("query_desc")
             relevant_chunks = query.get("relevant_chunks")
             ranked_chunks = data.get_ranked_with_prev_chunks_from_query_id(query_id)
-            single_sims = data.get_sims_single_from_query_id(query_id)
-            double_sims = data.get_sims_double_from_query_id(query_id)
 
-            topic = Topic(query_emb, page, ranked_chunks, relevant_chunks, max_exp_loops, single_sims, double_sims)
+            topic = Topic(query_emb, page, ranked_chunks, relevant_chunks, max_exp_loops)
 
             state_emb, state_meta, _, _ = topic.get_initial_step()
             state_emb = state_emb.to(device)
@@ -257,7 +256,7 @@ def train(split):
                     
             epoch_reward += episode_reward
             epoch_f1_score += topic.f1_score
-            logging.info(f"Epoch: {epoch}, Query: {query_desc}, Episode Reward: {episode_reward:.4f}, Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Relevant: {topic.relevant_chunks}, Top_10_Rank: {topic.ranked_chunks[:10]}, Actions: {topic.actions_taken}")
+            logging.info(f"Epoch: {epoch}, Query: {query_desc}, Episode Reward: {episode_reward:.4f}, Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Relevant: {topic.relevant_chunks}, Top_10_Rank: {topic.ranked_chunks[:10]}")
             
             if epsilon > epsilon_min:
                 epsilon *= epsilon_decay
@@ -271,6 +270,7 @@ def train(split):
         scheduler.step()
 
         # Greedy evaluation
+        """
         online_net.eval()
 
         avg_train_reward, avg_train_f1_score = evaluate(
@@ -289,6 +289,7 @@ def train(split):
             logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
             print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
             val_f1_scores.append(avg_val_f1_score)
+        """
 
     extra_logger.info(f"{now_str}\t{proj_dim}\t{gamma}\t{epsilon_min}\t{epsilon_decay}\t{batch_size}\t{replay_capacity}\t{lr}\t{target_update}\t{epochs}\t{max_exp_loops}\t{action_dim}\t{scheduler_type}\t{per_alpha}\t{per_beta}\t{per_beta_increment}\t{dropout_p}\t{best_score:.4f}")
     
@@ -297,4 +298,5 @@ def train(split):
     plt.legend()
     plt.savefig('train_vs_val.png')
 
-    torch.save(online_net.state_dict(), "models/rl-chunk-retriever.pt")
+    trained_model_path = "models/rl-chunk-retriever.pt"
+    torch.save(online_net.state_dict(), trained_model_path)

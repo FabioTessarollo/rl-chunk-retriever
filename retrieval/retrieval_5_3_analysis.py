@@ -4,10 +4,10 @@ from collections import defaultdict
 
 
 # Define the file paths
-RL_MODEL_FILE = 'data_analysis/rl_model_retrieved_test_single.json' 
-COS_SIM_FILE = 'data_chunks_cos_sim/cosine_sim_rank_retrieved_test_single.json'
-CHUNKS_SCORES_FILE = 'data_chunks/relevant_chunks_test.json'
-OUTPUT_MERGED = "data_analysis/comprehensive_merged_results_single.json"
+RL_MODEL_FILE = 'data_5_analysis/rl_model_retrieved_test_single.json' 
+COS_SIM_FILE = 'data_4_cos_sim/cosine_sim_rank_retrieved_test_single.json'
+CHUNKS_SCORES_FILE = 'data_2_chunk_and_label/relevant_chunks_test.json'
+OUTPUT_MERGED = "data_5_analysis/comprehensive_merged_results_single.json"
 
 def f1_score(pred_ids, true_ids):
     tp = len(set(pred_ids) & set(true_ids))
@@ -193,7 +193,7 @@ def process_all_queries(final_data, completeness_threshold):
 
     return filtered_results
 
-if __name__ == "__main__":
+def analyze():
     # Merge data
     final_data = merge_json_data()
     
@@ -217,5 +217,5 @@ if __name__ == "__main__":
 
     filtered_results = process_all_queries(final_data, completeness_threshold)
 
-    with open('data_analysis/filtered_results.json', 'w') as f:
+    with open('data_5_analysis/filtered_results.json', 'w') as f:
         json.dump(filtered_results, f, indent=2)

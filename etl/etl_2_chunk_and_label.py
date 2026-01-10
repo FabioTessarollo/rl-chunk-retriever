@@ -108,13 +108,16 @@ def process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chu
     with open(relevant_out_path, 'w', encoding='utf-8') as out:
         json.dump(relevant_output, out, ensure_ascii=False, indent=2)
 
-def chunk_and_label(set, pages_path, relevant_path, chunk_size = 50):
+def chunk_and_label(set, chunk_size = 50):
     
-    pages_out_path = f'data_chunks/pages_chunked_{set}.json'
-    relevant_out_path = f'data_chunks/relevant_chunks_{set}.json'
+    # input
+    pages_path = f"data_1_extract/pages_{set}.jsonl"
+    relevant_path = f"data_1_extract/relevant_paragraphs_{set}.jsonl"
 
-    os.makedirs('data_chunks', exist_ok=True)
+    # output
+    pages_out_path = f'data_2_chunk_and_label/pages_chunked_{set}.json'
+    relevant_out_path = f'data_2_chunk_and_label/relevant_chunks_{set}.json'
+
+    os.makedirs('data_2_chunk_and_label', exist_ok=True)
     pages_text_map, pages_chunks_map = process_pages(pages_path, pages_out_path, chunk_size)
     process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chunks_map, chunk_size)
-
-    return pages_out_path, relevant_out_path

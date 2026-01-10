@@ -32,21 +32,21 @@ class DuelingDQN(nn.Module):
 
     def forward(self, state_embedding, state_metadata):
         # split concatenated embeddings: (batch, 3072) → 4 × (batch, 768)
-        single, double, prev_double, query, bag = torch.split(state_embedding, 768, dim=-1)
+        current, next, prev, query, bag = torch.split(state_embedding, 768, dim=-1)
 
-        double = torch.cat([single, double], dim=-1)
+        current_and_next = torch.cat([current, next], dim=-1)
 
-        prev_double = torch.cat([single, prev_double], dim=-1)
+        current_and_prev = torch.cat([current, prev], dim=-1)
 
         # project each separately
-        s = F.relu(self.single_proj(single))
-        d = F.relu(self.double_proj(double))
-        pd = F.relu(self.double_proj(prev_double))
+        c = F.relu(self.single_proj(current))
+        cn = F.relu(self.double_proj(current_and_next))
+        cp = F.relu(self.double_proj(current_and_prev))
         q = F.relu(self.query_proj(query))
         b = F.relu(self.bag_proj(bag))
 
         # concatenate projected embeddings
-        x = torch.cat([s, d, pd, q, b], dim=-1)
+        x = torch.cat([c, cn, cp, q, b], dim=-1)
 
         # shared trunk
         x = self.dropout(x)

@@ -38,16 +38,19 @@ def embed_relevant(input_path, output_path, model):
         json.dump(rels, f)
 
 
-def embed(set, pages_in, rels_in):
+def embed(set):
+
+    # input
+    pages_in = f'data_2_chunk_and_label/pages_chunked_{set}.json'
+    rels_in = f'data_2_chunk_and_label/relevant_chunks_{set}.json'
+
+    # output
+    pages_out = f'data_3_embed/pages_chunked_emb_{set}.json'
+    rels_out = f'data_3_embed/relevant_chunks_emb_{set}.json'
 
     model_name = 'intfloat/e5-base-v2'
     print(f'Loading model {model_name}...')
     model = SentenceTransformer(model_name) # this is already doing L2 Norm
 
-    pages_out = f'data_chunks_emb/pages_chunked_emb_{set}.json'
-    rels_out = f'data_chunks_emb/relevant_chunks_emb_{set}.json'
-
     embed_pages(pages_in, pages_out, model)
     embed_relevant(rels_in, rels_out, model)
-
-    return pages_out, rels_out

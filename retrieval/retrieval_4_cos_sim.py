@@ -21,7 +21,7 @@ def evaluate_with_threshold(data, query_ids, threshold, device):
         query = data.get_query_obj_from_id(query_id)
         page_id = query.get("page_id")
         query_desc = query.get("query_desc")
-        page, page_even, page_odd = data.get_page_chunks_dict(page_id)
+        page = data.get_page_chunks_dict(page_id)
         query_embedding = torch.tensor(query.get("query")).to(device)
         relevant_chunks = set(query.get("relevant_chunks"))
         
@@ -48,12 +48,19 @@ def evaluate_with_threshold(data, query_ids, threshold, device):
         
         f1_score = 2 * (precision * recall) / (precision + recall) if precision + recall > 0 else 0
         f1_score_total += f1_score
+
+        # Add query result to list
+        cosine_sim_results.append({
+            "query_desc": query_desc,
+            "f1_score": f1_score,
+            "cos_sim_retrieved_chunks": list(selected_chunks)
+        })
     
     avg_recall = recall_total / n if n > 0 else 0
     avg_precision = precision_total / n if n > 0 else 0
     avg_f1_score = f1_score_total / n if n > 0 else 0
     
-    return avg_recall, avg_precision, avg_f1_score
+    return avg_recall, avg_precision, avg_f1_score, cosine_sim_results
 
 def find_optimal_threshold(data, training_query_ids, device, threshold_range=(0.77, 0.83), step=0.01):
     """Find the optimal cosine similarity threshold using training data"""
@@ -64,7 +71,7 @@ def find_optimal_threshold(data, training_query_ids, device, threshold_range=(0.
     thresholds = np.arange(threshold_range[0], threshold_range[1] + step, step)
     
     for threshold in thresholds:
-        _, _, f1_score = evaluate_with_threshold(data, training_query_ids, threshold, device)
+        _, _, f1_score, _ = evaluate_with_threshold(data, training_query_ids, threshold, device)
         
         if f1_score > best_f1_score:
             best_f1_score = f1_score
@@ -118,47 +125,56 @@ def get_rankings_with_threshold(data, query_ids, threshold, device, top_k, n_exa
     
     return rankings
 
-def cos_sim(set, split):
+def cos_sim():
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-    pages_path = f"data_chunks_emb/pages_chunked_emb_{set}.json"
-    relevant_path = f"data_chunks_emb/relevant_chunks_emb_{set}.json"
 
-    data = Data(pages_path, relevant_path)
+    pages_path = "data_3_embed/pages_chunked_emb_train.json"
+    relevant_path = "data_3_embed/relevant_chunks_emb_train.json"
+    cosine_sim_path = "data_4_cos_sim/cosine_sim_rank_threshold_only_single.json"
+
+    data = Data(pages_path, relevant_path, cosine_sim_path)
     data.load_pages()
     data.load_relevant()
+    data.load_cosine_sim()
+
+    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 0.8)
+
+    pages_path_test = f"data_3_embed/pages_chunked_emb_test.json"
+    relevant_path_test = f"data_3_embed/relevant_chunks_emb_test.json"
+
+    data_test = Data(pages_path_test, relevant_path_test)
+    data_test.load_pages()
+    data_test.load_relevant()
 
     n_examples = 2
 
-    # Split data into training and validation sets
-    training_set, validation_set = data.balanced_split_query_ids(data.query_ids, split)
-    
-    print(f"Training queries: {len(training_set)}")
-    print(f"Validation queries: {len(validation_set)}")
-    
-    # Find optimal threshold using training data
-    optimal_threshold = find_optimal_threshold(data, training_set, device)
-    
+
     # Evaluate on training set with optimal threshold
-    print(f"\n=== Training Set Results (Threshold: {optimal_threshold:.3f}) ===")
-    train_recall, train_precision, train_f1 = evaluate_with_threshold(data, training_set, optimal_threshold, device)
+    optimal_threshold = find_optimal_threshold(data, train_set, device)
+    
+    # Evaluate on validation set with optimal threshold
+    print(f"\n=== Validation Set Results (Threshold: {optimal_threshold:.3f}) ===")
+    val_recall, val_precision, val_f1, _ = evaluate_with_threshold(data, validation_set, optimal_threshold, device)
+    print(f"Recall: {val_recall:.4f}")
+    print(f"Precision: {val_precision:.4f}")
+    print(f"F1 Score: {val_f1:.4f}")
+    
+    # Find optimal threshold using full training data
+    optimal_threshold = find_optimal_threshold(data, data.query_ids, device)
+
+    # Evaluate on test set with optimal threshold
+    print(f"\n=== Test Set Results (Threshold: {optimal_threshold:.3f}) ===")
+    train_recall, train_precision, train_f1, cosine_sim_results = evaluate_with_threshold(data_test, data_test.query_ids, optimal_threshold, device)
     print(f"Recall: {train_recall:.4f}")
     print(f"Precision: {train_precision:.4f}")
     print(f"F1 Score: {train_f1:.4f}")
     
-    if split < 1:
-        # Evaluate on validation set with optimal threshold
-        print(f"\n=== Validation Set Results (Threshold: {optimal_threshold:.3f}) ===")
-        val_recall, val_precision, val_f1 = evaluate_with_threshold(data, validation_set, optimal_threshold, device)
-        print(f"Recall: {val_recall:.4f}")
-        print(f"Precision: {val_precision:.4f}")
-        print(f"F1 Score: {val_f1:.4f}")
-    
-    # Get rankings for all queries using optimal threshold
-    top_k = 40
-    threshold = 0.77
+    # Get rankings for all queries using a threshold
+    top_k = 40 # max rank size
+    threshold = 0.77 # min similarity
     all_rankings = get_rankings_with_threshold(data, data.query_ids, threshold, device, top_k,n_examples)
 
-    output_dir = "data_chunks_cos_sim"
+    output_dir = "data_4_cos_sim"
     os.makedirs(output_dir, exist_ok=True)
 
     # Save to JSON files
@@ -166,25 +182,9 @@ def cos_sim(set, split):
     with open(output_file, 'w') as f:
         json.dump(all_rankings, f, indent=2)
 
-    # Save results summary
-    results = {
-        "optimal_threshold": optimal_threshold,
-        "training_results": {
-            "recall": train_recall,
-            "precision": train_precision,
-            "f1_score": train_f1,
-            "num_queries": len(training_set)
-        },
-        "validation_results": {
-            "recall": val_recall,
-            "precision": val_precision,
-            "f1_score": val_f1,
-            "num_queries": len(validation_set)
-        }
-    }
-    
-    results_file = os.path.join(output_dir, "threshold_optimization_results.json")
-    with open(results_file, 'w') as f:
-        json.dump(results, f, indent=2)
+    # Save to JSON files
+    output_file = os.path.join(output_dir, f"cosine_sim_rank_retrieved_test_single.json")
+    with open(output_file, 'w') as f:
+        json.dump(cosine_sim_results, f, indent=2)
 
 

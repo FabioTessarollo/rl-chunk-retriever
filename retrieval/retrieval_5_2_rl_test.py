@@ -84,18 +84,18 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
 
         })
 
-        logging.info(f"GREEDY - Query: {query_desc}, Episode Reward: {episode_reward:.4f}, Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Relevant: {topic.relevant_chunks}, Top_10_Rank: {topic.ranked_chunks[:10]}, Actions: {topic.actions_taken}")
+        logging.info(f"GREEDY - Query: {query_desc}, Episode Reward: {episode_reward:.4f}, Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Relevant: {topic.relevant_chunks}, Top_10_Rank: {topic.ranked_chunks[:10]}")
     
     avg_val_reward = val_reward / len(query_ids)
     avg_val_f1_score = val_f1_score / len(query_ids)
     
     return avg_val_reward, avg_val_f1_score, results
 
-def main():
+def test():
 
-    pages_path_test = f"data_chunks_emb/pages_chunked_emb_test.json"
-    relevant_path_test = f"data_chunks_emb/relevant_chunks_emb_test.json"
-    cosine_sim_path_test = "data_chunks_cos_sim/cosine_sim_rank_threshold_only_single_test.json"
+    pages_path_test = f"data_3_embed/pages_chunked_emb_test.json"
+    relevant_path_test = f"data_3_embed/relevant_chunks_emb_test.json"
+    cosine_sim_path_test = "data_4_cos_sim/cosine_sim_rank_threshold_only_single_test.json"
 
     data_test = Data(pages_path_test, relevant_path_test, cosine_sim_path_test)
     data_test.load_pages()
@@ -117,12 +117,10 @@ def main():
     logging.info(f"GREEDY: TEST Reward: {avg_val_reward:.4f}, TEST F1: {avg_val_f1_score:.4f}")
     print(f"GREEDY: TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
 
-    output_dir = "data_analysis"
+    output_dir = "data_5_analysis"
     os.makedirs(output_dir, exist_ok=True)
 
     output_file = os.path.join(output_dir, "rl_model_retrieved_test_single.json")
     with open(output_file, 'w') as f:
         json.dump(results, f, indent=2)
 
-if __name__ == "__main__":
-    main()
