@@ -91,7 +91,7 @@ def train():
     data.load_relevant()
     data.load_cosine_sim()
 
-    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 0.8)
+    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 1)
 
     best_score = 0
     proj_dim = 256
@@ -106,7 +106,7 @@ def train():
     replay_capacity = 50000
     lr = 1e-5
     target_update = 5000
-    epochs = 24
+    epochs = 24 #24
     max_exp_loops = 1
     action_dim = 5
     dropout_p = 0
@@ -270,7 +270,9 @@ def train():
         scheduler.step()
 
         # Greedy evaluation
+
         """
+        
         online_net.eval()
 
         avg_train_reward, avg_train_f1_score = evaluate(
@@ -281,14 +283,18 @@ def train():
         print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
         train_f1_scores.append(avg_train_f1_score)
 
-        if split < 1:
-            avg_val_reward, avg_val_f1_score = evaluate(
-                data, validation_set, online_net, device, 
-                max_exp_loops
-            )
-            logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
-            print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
-            val_f1_scores.append(avg_val_f1_score)
+        avg_val_reward, avg_val_f1_score = evaluate(
+            data, validation_set, online_net, device, 
+            max_exp_loops
+        )
+        logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
+        print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
+        val_f1_scores.append(avg_val_f1_score)
+
+        if es.step(avg_val_f1_score):
+            print(f"Early stopping at epoch {epoch}")
+            break
+        
         """
 
     extra_logger.info(f"{now_str}\t{proj_dim}\t{gamma}\t{epsilon_min}\t{epsilon_decay}\t{batch_size}\t{replay_capacity}\t{lr}\t{target_update}\t{epochs}\t{max_exp_loops}\t{action_dim}\t{scheduler_type}\t{per_alpha}\t{per_beta}\t{per_beta_increment}\t{dropout_p}\t{best_score:.4f}")

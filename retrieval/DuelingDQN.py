@@ -31,11 +31,9 @@ class DuelingDQN(nn.Module):
         self.adv_out = nn.Linear(64, action_dim)
 
     def forward(self, state_embedding, state_metadata):
-        # split concatenated embeddings: (batch, 3072) → 4 × (batch, 768)
+        # split concatenated embeddings
         current, next, prev, query, bag = torch.split(state_embedding, 768, dim=-1)
-
         current_and_next = torch.cat([current, next], dim=-1)
-
         current_and_prev = torch.cat([current, prev], dim=-1)
 
         # project each separately

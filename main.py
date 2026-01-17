@@ -28,7 +28,7 @@ def main():
     # Evaluate RL model on test data using trained model
     # test()
 
-    analyze()
+    # analyze()
 
 
 

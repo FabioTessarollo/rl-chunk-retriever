@@ -929,7 +929,7 @@ wheels = [
 ]
 
 [[package]]
-name = "rl-chunk-selector"
+name = "rl-chunks-retriever"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
