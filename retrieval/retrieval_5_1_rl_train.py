@@ -84,7 +84,7 @@ def train():
 
     pages_path = "data_3_embed/pages_chunked_emb_train.json"
     relevant_path = "data_3_embed/relevant_chunks_emb_train.json"
-    cosine_sim_path = "data_4_cos_sim/cosine_sim_rank_threshold_only_single.json"
+    cosine_sim_path = "data_4_cos_sim/cosine_sim_rank_threshold_only_single_train.json" #_train
 
     data = Data(pages_path, relevant_path, cosine_sim_path)
     data.load_pages()

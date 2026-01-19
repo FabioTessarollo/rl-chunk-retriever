@@ -137,7 +137,6 @@ def find_optimal_threshold(data, training_query_ids, device, threshold_range=(0.
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
-        plt.show()
         plt.savefig('ROC-AUC.png')
     
     print(f"\nBest threshold: {best_threshold:.3f} with F1: {best_f1_score:.4f}")
@@ -155,6 +154,7 @@ def get_rankings_with_threshold(data, query_ids, threshold, device, top_k, n_exa
         page = data.get_page_chunks_dict(page_id)
         query_embedding = torch.tensor(query.get("query")).to(device)
         relevant_chunks = set(query.get("relevant_chunks"))
+        total_chunks_count = len(page)
         
         # Calculate similarities for single chunks
         chunks_similarity_dict = {}
@@ -169,7 +169,8 @@ def get_rankings_with_threshold(data, query_ids, threshold, device, top_k, n_exa
         # Store the query info
         rankings[query_id] = {
             "query_desc": query_desc,
-            "relevant_chunks": [chunk_id for chunk_id, _ in top_chunks.items()]
+            "relevant_chunks": [chunk_id for chunk_id, _ in top_chunks.items()],
+            "total_chunks_count" : total_chunks_count
         }
 
         # Print example if query_id was selected
@@ -233,17 +234,23 @@ def cos_sim():
     # Get rankings for all queries using a threshold
     top_k = 40 # max rank size
     threshold = 0.77 # min similarity
-    all_rankings = get_rankings_with_threshold(data, data.query_ids, threshold, device, top_k,n_examples)
+    all_rankings_train = get_rankings_with_threshold(data, data.query_ids, threshold, device, top_k,n_examples)
+    all_rankings_test = get_rankings_with_threshold(data_test, data_test.query_ids, threshold, device, top_k,n_examples)
 
     output_dir = "data_4_cos_sim"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Save to JSON files
-    output_file = os.path.join(output_dir, f"cosine_sim_rank_threshold_only_single_{set}.json")
+    # Save train set rankings for RL model train and inference
+    output_file = os.path.join(output_dir, f"cosine_sim_rank_threshold_only_single_train.json")
     with open(output_file, 'w') as f:
-        json.dump(all_rankings, f, indent=2)
+        json.dump(all_rankings_train, f, indent=2)
 
-    # Save to JSON files
+    # Save test set rankings for RL model inference
+    output_file = os.path.join(output_dir, f"cosine_sim_rank_threshold_only_single_test.json")
+    with open(output_file, 'w') as f:
+        json.dump(all_rankings_test, f, indent=2)
+
+    # Save TEST cos sim results for analysis
     output_file = os.path.join(output_dir, f"cosine_sim_rank_retrieved_test_single.json")
     with open(output_file, 'w') as f:
         json.dump(cosine_sim_results, f, indent=2)
