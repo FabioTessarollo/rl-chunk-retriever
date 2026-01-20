@@ -94,7 +94,6 @@ def train():
     train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 1)
 
     best_score = 0
-    proj_dim = 256
     metadata_dim = 9
     epsilon = 1.0
 
@@ -298,11 +297,11 @@ def train():
         """
 
     extra_logger.info(f"{now_str}\t{proj_dim}\t{gamma}\t{epsilon_min}\t{epsilon_decay}\t{batch_size}\t{replay_capacity}\t{lr}\t{target_update}\t{epochs}\t{max_exp_loops}\t{action_dim}\t{scheduler_type}\t{per_alpha}\t{per_beta}\t{per_beta_increment}\t{dropout_p}\t{best_score:.4f}")
-    
+    """
     plt.plot(train_f1_scores, label='train')
     plt.plot(val_f1_scores, label='val')
     plt.legend()
     plt.savefig('train_vs_val.png')
-
+    """
     trained_model_path = "models/rl-chunk-retriever.pt"
     torch.save(online_net.state_dict(), trained_model_path)
