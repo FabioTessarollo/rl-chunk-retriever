@@ -118,7 +118,7 @@ def calculate_metrics(merged_data):
     }
 
 
-def process_all_queries(final_data, completeness_threshold):
+def process_all_queries(final_data, completeness_threshold, topk):
 
     filtered_results = []
     rl_scores = []
@@ -161,12 +161,12 @@ def process_all_queries(final_data, completeness_threshold):
         rl_model_retrieved_filtered = [
             chunk_id for chunk_id in item['rl_model_retrieved']
             if chunk_id not in chunks_to_remove
-        ]
+        ][:topk]
         
         cos_sim_retrieved_chunks_filtered = [
             chunk_id for chunk_id in item['cos_sim_retrieved_chunks']
             if chunk_id not in chunks_to_remove
-        ]
+        ][:topk]
         
         relevant_chunks_filtered = [
             chunk_id for chunk_id in item['relevant_chunks']
@@ -263,7 +263,7 @@ def analyze():
 
     completeness_threshold = 1.1 # 0.8 means chunks with more than 80% relevant are removed
 
-    filtered_results = process_all_queries(final_data, completeness_threshold)
+    filtered_results = process_all_queries(final_data, completeness_threshold, topk = 100)
 
     with open('data_5_analysis/filtered_results.json', 'w') as f:
         json.dump(filtered_results, f, indent=2)

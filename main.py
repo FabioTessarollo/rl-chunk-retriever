@@ -15,10 +15,10 @@ def main():
     # embed('train')
 
     # Get CosSim results and rankings
-    cos_sim()
+    # cos_sim()
 
     # Traing of RL Model
-    train()
+    # train()
 
     # Get test data
     # extract('test')
@@ -26,7 +26,7 @@ def main():
     # embed('test')
 
     # Evaluate RL model on test data using trained model
-    test()
+    # test()
 
     analyze()
 
