@@ -30,7 +30,7 @@ class DuelingDQN(nn.Module):
         self.adv_fc = nn.Linear(128, 64)
         self.adv_out = nn.Linear(64, action_dim)
 
-    def forward(self, state_embedding, state_metadata):
+    def forward(self, state_embedding, state_metadata, return_streams=False):
         # split concatenated embeddings
         current, next, prev, query, bag = torch.split(state_embedding, 768, dim=-1)
         current_and_next = torch.cat([current, next], dim=-1)
@@ -62,4 +62,7 @@ class DuelingDQN(nn.Module):
 
         # dueling combine
         q = v + a - a.mean(dim=-1, keepdim=True)
+
+        if return_streams:
+            return q, v, a
         return q

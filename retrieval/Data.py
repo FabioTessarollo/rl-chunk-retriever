@@ -27,7 +27,6 @@ class Data:
     def load_cosine_sim(self):
         with open(self.cosine_sim_rank_path, 'r', encoding='utf-8') as f:
             self.cosine_sim_rank = json.load(f)
-            print(f"Loaded data type: {type(self.cosine_sim_rank)}")
             print(f"Number of entries: {len(self.cosine_sim_rank) if isinstance(self.cosine_sim_rank, dict) else 'N/A'}")
             self.cosine_sim_rank = {k: v['relevant_chunks'] for k, v in self.cosine_sim_rank.items() if v}
 

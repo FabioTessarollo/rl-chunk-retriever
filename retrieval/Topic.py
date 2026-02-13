@@ -34,7 +34,8 @@ class Topic:
     
     def get_state_metadata(self):
         rank_position = (self.current_rank_chunk + 1)  / len(self.ranked_chunks)
-        remaining_loops = (self.current_loop + 1) / self.max_exp_loops
+        #remaining_loops = (self.current_loop + 1) / self.max_exp_loops
+        prev_chunk_already_in_bag = int(self.current_chunk_id - 1 in self.bag_of_chunks)
         single_chunk_already_in_bag = int(self.current_chunk_id in self.bag_of_chunks)
         next_chunk_already_in_bag = int(self.current_chunk_id + 1 in self.bag_of_chunks)
         bag_size = len(self.bag_of_chunks) / len(self.ranked_chunks)
@@ -42,7 +43,7 @@ class Topic:
         dq_sim = self.cos_sim_norm(self.double_chunk_emb, self.single_chunk_emb)
         bq_sim = self.cos_sim_norm(self.bag_of_chunks_embedding, self.query_emb)
         pdq_sim = self.cos_sim_norm(self.prev_double_chunk_emb, self.single_chunk_emb)
-        state_metadata = torch.tensor([rank_position, remaining_loops, single_chunk_already_in_bag, next_chunk_already_in_bag, bag_size, sq_sim, dq_sim, bq_sim, pdq_sim], device = self.device)
+        state_metadata = torch.tensor([rank_position, prev_chunk_already_in_bag, single_chunk_already_in_bag, next_chunk_already_in_bag, bag_size, sq_sim, dq_sim, bq_sim, pdq_sim], device = self.device)
         return state_metadata
 
     def get_initial_step(self):
