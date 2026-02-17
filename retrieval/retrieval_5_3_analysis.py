@@ -1,6 +1,9 @@
 import json
 import os
 from collections import defaultdict
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+import numpy as np
 
 
 # Define the file paths
@@ -118,7 +121,7 @@ def calculate_metrics(merged_data):
     }
 
 
-def process_all_queries(final_data, completeness_threshold, topk):
+def process_all_queries(final_data, completeness_threshold, topk, return_avg_scores = False):
 
     filtered_results = []
     rl_scores = []
@@ -213,8 +216,11 @@ def process_all_queries(final_data, completeness_threshold, topk):
     # Calculate Averages for Cos-Sim
     cs_f1_avg = sum(cos_sim_scores) / len(cos_sim_scores)
     cs_rec_avg = sum(cos_sim_recall_scores) / len(cos_sim_recall_scores)
-    cs_tpr_avg = sum(cos_sim_precision_scores) / len(cos_sim_precision_scores)
+    cs_precision_avg = sum(cos_sim_precision_scores) / len(cos_sim_precision_scores)
     cs_fpr_avg = sum(cos_sim_fpr_scores) / len(cos_sim_fpr_scores)
+
+    if return_avg_scores:
+        return rl_f1_avg, rl_rec_avg, rl_precision_avg, cs_f1_avg, cs_rec_avg, cs_precision_avg
 
     print(f"\nProcessing Complete!")
     print(f"Total queries: {len(final_data)}")
@@ -232,7 +238,7 @@ def process_all_queries(final_data, completeness_threshold, topk):
     print(f"\n--- Cos-Sim Metrics ---")
     print(f"Average CS F1 Score:     {cs_f1_avg:.4f}")
     print(f"Average CS Recall (TPR): {cs_rec_avg:.4f}")
-    print(f"Average CS Precision:    {cs_tpr_avg:.4f}")
+    print(f"Average CS Precision:    {cs_precision_avg:.4f}")
     print(f"Average CS FPR:          {cs_fpr_avg:.4f}")
 
     # Variation (using F1 as the primary comparison)
@@ -240,6 +246,75 @@ def process_all_queries(final_data, completeness_threshold, topk):
     print(f"\nF1 Score Variation: {variation:.4f}%")
 
     return filtered_results
+
+def plot_relevance_coverage(thresholds, final_data):
+
+    results = {
+        "f1":        {"rl": [], "cs": []},
+        "recall":    {"rl": [], "cs": []},
+        "precision": {"rl": [], "cs": []},
+    }
+
+    for t in thresholds:
+        rl_f1, rl_rec, rl_prec, cs_f1, cs_rec, cs_prec = process_all_queries(
+            final_data, t, topk=100, return_avg_scores=True
+        )
+        results["f1"]["rl"].append(rl_f1)
+        results["f1"]["cs"].append(cs_f1)
+        results["recall"]["rl"].append(rl_rec)
+        results["recall"]["cs"].append(cs_rec)
+        results["precision"]["rl"].append(rl_prec)
+        results["precision"]["cs"].append(cs_prec)
+
+    # ── Style ──────────────────────────────────────────────────────────────────
+    BLUE  = "#3B82F6"
+    CORAL = "#F97316"
+    GRID  = "#E5E7EB"
+    BG    = "#F9FAFB"
+
+    plt.rcParams.update({
+        "font.family": "serif",
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "axes.facecolor": BG,
+        "figure.facecolor": "white",
+    })
+
+    score_labels = {
+        "f1":        "F1 Score",
+        "recall":    "Recall",
+        "precision": "Precision",
+    }
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=False)
+    fig.suptitle("RL vs Cosine Similarity Scores\nover Completeness Threshold",
+                fontsize=15, fontweight="bold", y=1.02)
+
+    for ax, (key, label) in zip(axes, score_labels.items()):
+        rl_vals = results[key]["rl"]
+        cs_vals = results[key]["cs"]
+
+        ax.plot(thresholds, rl_vals,
+                color=BLUE,  marker="o", linewidth=2.2, markersize=6,
+                label="RL", zorder=3)
+        ax.plot(thresholds, cs_vals,
+                color=CORAL, marker="s", linewidth=2.2, markersize=6,
+                linestyle="--", label="Cosine Sim", zorder=3)
+
+        ax.yaxis.grid(True, color=GRID, linewidth=0.8, zorder=0)
+        ax.set_xlabel("Completeness Threshold", fontsize=11)
+        ax.set_ylabel(label, fontsize=11)
+        ax.set_title(label, fontsize=13, fontweight="bold", pad=10)
+        ax.set_xticks(thresholds)
+        ax.xaxis.set_major_formatter(ticker.FormatStrFormatter("%.1f"))
+        ax.tick_params(axis="x", rotation=45)
+        ax.legend(frameon=False, fontsize=10)
+        ax.set_xlim(-0.02, 1.02)
+
+    plt.tight_layout()
+    plt.savefig("scores_over_threshold.png", dpi=150, bbox_inches="tight")
+    plt.show()
+    print("Saved → scores_over_threshold.png")
 
 def analyze():
     # Merge data
@@ -265,5 +340,11 @@ def analyze():
 
     filtered_results = process_all_queries(final_data, completeness_threshold, topk = 100)
 
+    filtered_results = process_all_queries(final_data, 1, topk = 100, return_avg_scores=True)
+
     with open('data_5_analysis/filtered_results.json', 'w') as f:
         json.dump(filtered_results, f, indent=2)
+
+    thresholds = np.arange(1, 0, -0.1)
+
+    plot_relevance_coverage(thresholds, final_data)

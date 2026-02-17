@@ -21,136 +21,6 @@ now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 random.seed(1)
 torch.manual_seed(1)
 
-def compute_stream_feature_importance(online_net, data, query_ids, device, max_exp_loops, n_samples=200):
-    import os
-    online_net.eval()
-
-    metadata_feature_names = [
-        "rank_pos",
-        "prev_taken",
-        "curr_taken",
-        "next_taken",
-        "bag_size",
-        "sq_sim",
-        "dq_sim",
-        "bq_sim",
-        "pdq_sim"
-    ]
-    emb_group_names = ["current", "next", "prev", "query", "bag"]
-
-    sample_n = min(len(query_ids), n_samples)
-    sampled_qids = random.sample(list(query_ids), sample_n)
-
-    emb_sum_v = None
-    emb_sum_a = None
-    meta_sum_v = None
-    meta_sum_a = None
-    total_states = 0
-
-    for qid in sampled_qids:
-        query = data.get_query_obj_from_id(qid)
-        page_id = query.get("page_id")
-        page = data.get_page_chunks_dict(page_id)
-        query_emb = torch.tensor(query.get("query")).to(device)
-        relevant_chunks = query.get("relevant_chunks")
-        ranked_chunks = data.cosine_sim_rank[str(qid)]
-        topic = Topic(query_emb, page, ranked_chunks, relevant_chunks, max_exp_loops)
-
-        state_emb, state_meta, _, _ = topic.get_initial_step()
-        state_emb = state_emb.to(device)
-        state_meta = state_meta.to(device)
-        done = False
-
-        while not done:
-            state_emb_var = state_emb.clone().detach().unsqueeze(0).requires_grad_(True)
-            state_meta_var = state_meta.clone().detach().unsqueeze(0).requires_grad_(True)
-
-            q_vals, v_stream, a_stream = online_net(
-                state_emb_var, state_meta_var, return_streams=True
-            )
-
-            v_scalar = v_stream.sum()
-            a_scalar = a_stream.abs().sum()
-
-            online_net.zero_grad()
-            v_scalar.backward(retain_graph=True)
-            emb_grad_v = state_emb_var.grad.detach().squeeze(0).abs().cpu()
-            meta_grad_v = state_meta_var.grad.detach().squeeze(0).abs().cpu()
-
-            state_emb_var.grad.zero_()
-            state_meta_var.grad.zero_()
-
-            a_scalar.backward()
-            emb_grad_a = state_emb_var.grad.detach().squeeze(0).abs().cpu()
-            meta_grad_a = state_meta_var.grad.detach().squeeze(0).abs().cpu()
-
-            if emb_sum_v is None:
-                emb_sum_v = emb_grad_v.clone()
-                emb_sum_a = emb_grad_a.clone()
-                meta_sum_v = meta_grad_v.clone()
-                meta_sum_a = meta_grad_a.clone()
-            else:
-                emb_sum_v += emb_grad_v
-                emb_sum_a += emb_grad_a
-                meta_sum_v += meta_grad_v
-                meta_sum_a += meta_grad_a
-
-            total_states += 1
-
-            action = q_vals.argmax().item()
-            if topic.current_loop + 1 > max_exp_loops:
-                next_emb, next_meta, reward, done = topic.submit_current_bag()
-            elif action == 0:
-                next_emb, next_meta, reward, done = topic.skip()
-            elif action == 1:
-                next_emb, next_meta, reward, done = topic.take_single()
-            elif action == 2:
-                next_emb, next_meta, reward, done = topic.take_double()
-            elif action == 3:
-                next_emb, next_meta, reward, done = topic.take_prev_double()
-            else:
-                next_emb, next_meta, reward, done = topic.submit_current_bag()
-
-            state_emb = next_emb.to(device)
-            state_meta = next_meta.to(device)
-
-    if total_states == 0:
-        return
-
-    emb_mean_v = emb_sum_v / total_states
-    emb_mean_a = emb_sum_a / total_states
-    meta_mean_v = (meta_sum_v / total_states).numpy()
-    meta_mean_a = (meta_sum_a / total_states).numpy()
-
-    emb_len = emb_mean_v.numel()
-    groups = len(emb_group_names)
-    group_size = emb_len // groups
-
-    emb_mean_v_groups = emb_mean_v.view(groups, group_size).mean(dim=1).numpy()
-    emb_mean_a_groups = emb_mean_a.view(groups, group_size).mean(dim=1).numpy()
-
-    labels = metadata_feature_names + emb_group_names
-    value_scores = np.concatenate([meta_mean_v, emb_mean_v_groups])
-    adv_scores = np.concatenate([meta_mean_a, emb_mean_a_groups])
-
-    y = np.arange(len(labels))
-    height = 0.4
-
-    os.makedirs("feature_importance", exist_ok=True)
-
-    plt.figure(figsize=(10, 8))
-    plt.barh(y - height/2, value_scores, height=height, label="Value")
-    plt.barh(y + height/2, adv_scores, height=height, label="Advantage")
-    plt.yticks(y, labels)
-    plt.xlabel("Average |Gradient|")
-    plt.title("Value vs Advantage Stream Feature Importance")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig("value_vs_advantage_importance.png")
-    plt.close()
-
-
-
 def evaluate(data, query_ids, online_net, device, max_exp_loops):
     """Evaluate the model on validation set without training"""
     val_reward = 0
@@ -183,6 +53,7 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
                 action = q.argmax().item()
             
                 if topic.current_loop + 1 > max_exp_loops:
+                    action = 4
                     next_emb, next_meta, reward, done = topic.submit_current_bag()
                 elif action == 0:
                     next_emb, next_meta, reward, done = topic.skip()
@@ -233,7 +104,7 @@ def train():
     data_test.load_relevant()
     data_test.load_cosine_sim()
 
-    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 1)
+    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 0.66)
 
     best_score = 0
     metadata_dim = 9
@@ -247,7 +118,7 @@ def train():
     replay_capacity = 50000
     lr = 1e-5
     target_update = 5000
-    epochs = 31# 31 #24
+    epochs = 40# 31 #24
     max_exp_loops = 1
     action_dim = 5
     dropout_p = 0
@@ -328,6 +199,7 @@ def train():
                         action = q.argmax().item()
                 
                 if topic.current_loop + 1 > max_exp_loops:
+                    action = 4
                     next_emb, next_meta, reward, done = topic.submit_current_bag()
                 elif action == 0:
                     next_emb, next_meta, reward, done = topic.skip()
@@ -337,7 +209,7 @@ def train():
                     next_emb, next_meta, reward, done = topic.take_double()
                 elif action == 3:
                     next_emb, next_meta, reward, done = topic.take_prev_double()
-                elif action == 4 and action_dim == 5:
+                elif action == 4:
                     next_emb, next_meta, reward, done = topic.submit_current_bag()
                     
                 next_emb = next_emb.to(device)
@@ -412,35 +284,36 @@ def train():
 
         
         # Greedy evaluation
-        # online_net.eval()
+        if epoch > 10:
+            online_net.eval()
 
-        # avg_train_reward, avg_train_f1_score = evaluate(
-        #     data, train_set, online_net, device, 
-        #     max_exp_loops
-        # )
-        # logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
-        # print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
-        # train_f1_scores.append(avg_train_f1_score)
+            avg_train_reward, avg_train_f1_score = evaluate(
+                data, train_set, online_net, device, 
+                max_exp_loops
+            )
+            logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
+            print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
+            train_f1_scores.append(avg_train_f1_score)
 
-        # avg_val_reward, avg_val_f1_score = evaluate(
-        #     data, validation_set, online_net, device, 
-        #     max_exp_loops
-        # )
-        # logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
-        # print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
-        # val_f1_scores.append(avg_val_f1_score)
+            avg_val_reward, avg_val_f1_score = evaluate(
+                data, validation_set, online_net, device, 
+                max_exp_loops
+            )
+            logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
+            print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
+            val_f1_scores.append(avg_val_f1_score)
 
-        # if es.step(avg_val_f1_score):
-        #     print(f"Early stopping at epoch {epoch}")
-        #     break
+            if es.step(avg_val_f1_score):
+                print(f"Early stopping at epoch {epoch}")
+                break
         
-        # if epoch > 25:
-        #     avg_val_reward, avg_val_f1_score = evaluate(
-        #         data_test, data_test.query_ids, online_net, device, 
-        #         max_exp_loops
-        #     )
-        #     print(f"TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
-        #     val_f1_scores.append(avg_val_f1_score)
+        if epoch > 25:
+            avg_val_reward, avg_val_f1_score = evaluate(
+                data_test, data_test.query_ids, online_net, device, 
+                max_exp_loops
+            )
+            print(f"TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
+            val_f1_scores.append(avg_val_f1_score)
 
     extra_logger.info(f"{now_str}\t{proj_dim}\t{gamma}\t{epsilon_min}\t{epsilon_decay}\t{batch_size}\t{replay_capacity}\t{lr}\t{target_update}\t{epochs}\t{max_exp_loops}\t{action_dim}\t{scheduler_type}\t{per_alpha}\t{per_beta}\t{per_beta_increment}\t{dropout_p}\t{best_score:.4f}")
     
@@ -457,8 +330,4 @@ def train():
 
     trained_model_path = "models/rl-chunk-retriever.pt"
     torch.save(online_net.state_dict(), trained_model_path)
-
-    compute_stream_feature_importance(
-        online_net, data, train_set, device, max_exp_loops, n_samples=200 #  + validation_set
-    )
 
