@@ -35,7 +35,7 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
         ranked_chunks = data.cosine_sim_rank[str(query_id)]
         query_desc = query.get("query_desc")
 
-        logging.info(f"Epoch: {epoch}, Query: {query_desc}")
+        logging.info(f"Query: {query_desc}")
 
         topic = Topic(query_emb, page, ranked_chunks, relevant_chunks, max_exp_loops)
 
@@ -131,6 +131,9 @@ def train():
     per_beta = 0.4
     per_beta_increment = 0.001
     eta_min = 0.000001
+    neg_decay = 1
+    neg_decay_rate = 0.9
+
 
     es = EarlyStopping(patience=10, delta_ratio=0.001) #12? #15? #10?
 
@@ -182,9 +185,14 @@ def train():
             relevant_chunks = query.get("relevant_chunks")
             ranked_chunks = data.cosine_sim_rank[str(query_id)] #ranked_chunks = data.get_ranked_with_prev_chunks_from_query_id(query_id)
 
-            for item in relevant_chunks:
-                if not any(x == item for x in ranked_chunks):
-                    continue
+            # curriculum learning
+            # neg_decay *= neg_decay_rate
+            # ranked_chunks = [
+            #     c for c in ranked_chunks
+            #     if (c in relevant_chunks) or (torch.rand(1).item() < neg_decay)
+            # ]
+            if epoch > epochs/2 and not any(item in ranked_chunks for item in relevant_chunks):
+                continue
             
             logging.info(f"Epoch: {epoch}, Query: {query_desc}")
 
