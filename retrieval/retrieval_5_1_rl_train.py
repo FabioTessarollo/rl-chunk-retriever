@@ -120,9 +120,9 @@ def train():
     epsilon_decay = 0.99995
     batch_size = 32
     replay_capacity = 50000
-    lr = 1e-5
-    target_update = 5000
-    epochs = 40# 31 #24
+    lr = 2e-5
+    target_update = 1000 ############### PROVARE A DIMINUIRE
+    epochs = 90# 31 #24
     max_exp_loops = 1
     action_dim = 5
     dropout_p = 0
@@ -131,8 +131,8 @@ def train():
     per_beta = 0.4
     per_beta_increment = 0.001
     eta_min = 0.000001
-    neg_decay = 1
-    neg_decay_rate = 0.9
+    warm_up_epoches = 30
+    neg_schedule = torch.linspace(0.2, 1.0, steps=warm_up_epoches)**2
 
 
     es = EarlyStopping(patience=10, delta_ratio=0.001) #12? #15? #10?
@@ -146,7 +146,7 @@ def train():
     target_net.load_state_dict(online_net.state_dict())
     optimizer = optim.Adam(online_net.parameters(), lr=lr) #, weight_decay=1e-5)
 
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=200, eta_min=eta_min)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=90, eta_min=eta_min)
       
     replay = PrioritizedReplayBuffer(
         capacity=replay_capacity, 
@@ -175,6 +175,10 @@ def train():
         print(f"Current Learning Rate: {current_lr:.6f}")
         logging.info(f"Epoch {epoch} - Learning Rate: {current_lr:.6f}")
 
+        if epoch < warm_up_epoches:
+            p = neg_schedule[epoch].item()
+            print(p)
+
         print(f"Epoch: {epoch}")
         for query_id in train_set:
             query = data.get_query_obj_from_id(query_id)
@@ -185,15 +189,14 @@ def train():
             relevant_chunks = query.get("relevant_chunks")
             ranked_chunks = data.cosine_sim_rank[str(query_id)] #ranked_chunks = data.get_ranked_with_prev_chunks_from_query_id(query_id)
 
-            # curriculum learning
-            # neg_decay *= neg_decay_rate
-            # ranked_chunks = [
-            #     c for c in ranked_chunks
-            #     if (c in relevant_chunks) or (torch.rand(1).item() < neg_decay)
-            # ]
-            if epoch > epochs/2 and not any(item in ranked_chunks for item in relevant_chunks):
+
+            ranked_chunks = [
+                c for c in ranked_chunks
+                if (c in relevant_chunks) or (torch.rand(1).item() < p)
+            ]
+            if epoch <= 30 and not any(item in ranked_chunks for item in relevant_chunks):
                 continue
-            
+
             logging.info(f"Epoch: {epoch}, Query: {query_desc}")
 
             topic = Topic(query_emb, page, ranked_chunks, relevant_chunks, max_exp_loops)
