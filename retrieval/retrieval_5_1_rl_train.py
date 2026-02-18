@@ -104,7 +104,7 @@ def train():
     data_test.load_relevant()
     data_test.load_cosine_sim()
 
-    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 0.66)
+    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 1)
 
     best_score = 0
     metadata_dim = 9
@@ -178,6 +178,12 @@ def train():
             relevant_chunks = query.get("relevant_chunks")
             ranked_chunks = data.get_ranked_with_prev_chunks_from_query_id(query_id)
 
+            for item in relevant_chunks:
+                if not any(x == item for x in ranked_chunks):
+                    continue
+            
+            logging.info(f"Epoch: {epoch}, Query: {query_desc}")
+
             topic = Topic(query_emb, page, ranked_chunks, relevant_chunks, max_exp_loops)
 
             state_emb, state_meta, _, _ = topic.get_initial_step()
@@ -186,6 +192,7 @@ def train():
             episode_reward = 0
             done = False
             episode_steps = 0
+
             while not done:
                 episode_steps += 1
                 step_count += 1
@@ -197,6 +204,8 @@ def train():
                     with torch.no_grad():
                         q = online_net(state_emb.unsqueeze(0), state_meta.unsqueeze(0))
                         action = q.argmax().item()
+                
+                action_log = f"Chunk: {topic.current_chunk_id}"
                 
                 if topic.current_loop + 1 > max_exp_loops:
                     action = 4
@@ -211,6 +220,8 @@ def train():
                     next_emb, next_meta, reward, done = topic.take_prev_double()
                 elif action == 4:
                     next_emb, next_meta, reward, done = topic.submit_current_bag()
+
+                logging.info(f"{action_log}, Action Code: {action}, Reward: {reward:.4f}, Rand: {int(rand)}")
                     
                 next_emb = next_emb.to(device)
                 next_meta = next_meta.to(device)
@@ -260,8 +271,6 @@ def train():
                     
                     # Update priorities in replay buffer
                     replay.update_priorities(idxs, td_errors)
-                    
-                    logging.info(f"Epoch: {epoch}, Query: {query_id}, Step: {episode_steps}, Loss: {loss.item():.4f}, Reward: {reward:.4f}, Rand: {int(rand)}, Action Code: {action}")
                 
                 if step_count % target_update == 0:
                     target_net.load_state_dict(online_net.state_dict())
@@ -269,13 +278,13 @@ def train():
                     
             epoch_reward += episode_reward
             epoch_f1_score += topic.f1_score
-            logging.info(f"Epoch: {epoch}, Query: {query_desc}, Episode Reward: {episode_reward:.4f}, Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Relevant: {topic.relevant_chunks}, Top_10_Rank: {topic.ranked_chunks[:10]}")
+            logging.info(f"Episode Reward: {episode_reward:.4f}, Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Relevant: {topic.relevant_chunks}")
             
             if epsilon > epsilon_min:
                 epsilon *= epsilon_decay
                 
-        avg_epoch_reward = epoch_reward / len(data.query_ids)
-        avg_epoch_f1_score = epoch_f1_score / len(data.query_ids)
+        avg_epoch_reward = epoch_reward / len(train_set)
+        avg_epoch_f1_score = epoch_f1_score / len(train_set)
 
         logging.info(f"Epoch: {epoch}, Average Reward: {avg_epoch_reward:.4f}, Average F1: {avg_epoch_f1_score:.4f}, Epsilon: {epsilon:.4f}")
         print(f"Average Reward: {avg_epoch_reward:.4f}, Average F1: {avg_epoch_f1_score:.4f}")
@@ -284,30 +293,30 @@ def train():
 
         
         # Greedy evaluation
-        if epoch > 10:
-            online_net.eval()
+        # if epoch > 10:
+        #     online_net.eval()
 
-            avg_train_reward, avg_train_f1_score = evaluate(
-                data, train_set, online_net, device, 
-                max_exp_loops
-            )
-            logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
-            print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
-            train_f1_scores.append(avg_train_f1_score)
+        #     avg_train_reward, avg_train_f1_score = evaluate(
+        #         data, train_set, online_net, device, 
+        #         max_exp_loops
+        #     )
+        #     logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
+        #     print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
+        #     train_f1_scores.append(avg_train_f1_score)
 
-            avg_val_reward, avg_val_f1_score = evaluate(
-                data, validation_set, online_net, device, 
-                max_exp_loops
-            )
-            logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
-            print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
-            val_f1_scores.append(avg_val_f1_score)
+        #     avg_val_reward, avg_val_f1_score = evaluate(
+        #         data, validation_set, online_net, device, 
+        #         max_exp_loops
+        #     )
+        #     logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
+        #     print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
+        #     val_f1_scores.append(avg_val_f1_score)
 
-            if es.step(avg_val_f1_score):
-                print(f"Early stopping at epoch {epoch}")
-                break
+        #     if es.step(avg_val_f1_score):
+        #         print(f"Early stopping at epoch {epoch}")
+        #         break
         
-        if epoch > 25:
+        if epoch > 20:
             avg_val_reward, avg_val_f1_score = evaluate(
                 data_test, data_test.query_ids, online_net, device, 
                 max_exp_loops
