@@ -35,6 +35,8 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
         ranked_chunks = data.cosine_sim_rank[str(query_id)]
         query_desc = query.get("query_desc")
 
+        logging.info(f"Epoch: {epoch}, Query: {query_desc}")
+
         topic = Topic(query_emb, page, ranked_chunks, relevant_chunks, max_exp_loops)
 
         state_emb, state_meta, _, _ = topic.get_initial_step()
@@ -52,6 +54,8 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
                 q = online_net(state_emb.unsqueeze(0), state_meta.unsqueeze(0))
                 action = q.argmax().item()
             
+                action_log = f"Chunk: {topic.current_chunk_id}"
+                
                 if topic.current_loop + 1 > max_exp_loops:
                     action = 4
                     next_emb, next_meta, reward, done = topic.submit_current_bag()
@@ -65,14 +69,14 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
                     next_emb, next_meta, reward, done = topic.take_prev_double()
                 elif action == 4:
                     next_emb, next_meta, reward, done = topic.submit_current_bag()
+
+                logging.info(f"{action_log}, Action Code: {action}, Reward: {reward:.4f}")
                 
             next_emb = next_emb.to(device)
             next_meta = next_meta.to(device)
             episode_reward += reward
             
             state_emb, state_meta = next_emb, next_meta
-
-            logging.info(f"Step: {episode_steps}, Reward: {reward:.4f}, Action: {action}")
             
         val_reward += episode_reward
         val_f1_score += topic.f1_score
@@ -176,7 +180,7 @@ def train():
             query_emb = torch.tensor(query.get("query")).to(device)
             query_desc = query.get("query_desc")
             relevant_chunks = query.get("relevant_chunks")
-            ranked_chunks = data.get_ranked_with_prev_chunks_from_query_id(query_id)
+            ranked_chunks = data.cosine_sim_rank[str(query_id)] #ranked_chunks = data.get_ranked_with_prev_chunks_from_query_id(query_id)
 
             for item in relevant_chunks:
                 if not any(x == item for x in ranked_chunks):
