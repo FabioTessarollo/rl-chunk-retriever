@@ -131,8 +131,8 @@ def train():
     per_beta = 0.4
     per_beta_increment = 0.001
     eta_min = 0.000001
-    warm_up_epoches = 30
-    neg_schedule = torch.linspace(0.2, 1.0, steps=warm_up_epoches)**2
+    warm_up_epoches = 40
+    neg_schedule = torch.linspace(0.2, 1.0, steps=warm_up_epoches)
 
 
     es = EarlyStopping(patience=10, delta_ratio=0.001) #12? #15? #10?
@@ -144,7 +144,7 @@ def train():
     online_net = DuelingDQN(metadata_dim, action_dim, proj_dim, dropout_p).to(device)
     target_net = DuelingDQN(metadata_dim, action_dim, proj_dim, dropout_p).to(device)
     target_net.load_state_dict(online_net.state_dict())
-    optimizer = optim.Adam(online_net.parameters(), lr=lr) #, weight_decay=1e-5)
+    optimizer = optim.Adam(online_net.parameters(), lr=lr, weight_decay=1e-6)
 
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=90, eta_min=eta_min)
       
@@ -177,7 +177,6 @@ def train():
 
         if epoch < warm_up_epoches:
             p = neg_schedule[epoch].item()
-            print(p)
 
         print(f"Epoch: {epoch}")
         for query_id in train_set:
@@ -194,7 +193,7 @@ def train():
                 c for c in ranked_chunks
                 if (c in relevant_chunks) or (torch.rand(1).item() < p)
             ]
-            if epoch <= 30 and not any(item in ranked_chunks for item in relevant_chunks):
+            if epoch <= warm_up_epoches and not any(item in ranked_chunks for item in relevant_chunks):
                 continue
 
             logging.info(f"Epoch: {epoch}, Query: {query_desc}")
