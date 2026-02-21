@@ -85,7 +85,7 @@ class Topic:
     def skip(self):
 
         if self.current_chunk_id in self.relevant_chunks and self.current_chunk_id not in self.bag_of_chunks:
-            reward = -2
+            reward = -1
         else:
             reward = 1
 
@@ -104,7 +104,7 @@ class Topic:
         state_embedding = self.get_state_embedding()
         state_metadata = self.get_state_metadata()
 
-        return (state_embedding, state_metadata, reward/10, self.done)
+        return (state_embedding, state_metadata, reward, self.done)
     
     def take_single(self):
 

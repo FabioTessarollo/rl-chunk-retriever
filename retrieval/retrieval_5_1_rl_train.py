@@ -121,7 +121,7 @@ def train():
     batch_size = 32
     replay_capacity = 50000
     lr = 2e-5
-    target_update = 1000 ############### PROVARE A DIMINUIRE
+    target_update = 2000 ############### PROVARE A DIMINUIRE
     epochs = 90# 31 #24
     max_exp_loops = 1
     action_dim = 5
@@ -131,7 +131,7 @@ def train():
     per_beta = 0.4
     per_beta_increment = 0.001
     eta_min = 0.000001
-    warm_up_epoches = 40
+    warm_up_epoches = 30
     neg_schedule = torch.linspace(0.2, 1.0, steps=warm_up_epoches)
 
 
@@ -144,9 +144,9 @@ def train():
     online_net = DuelingDQN(metadata_dim, action_dim, proj_dim, dropout_p).to(device)
     target_net = DuelingDQN(metadata_dim, action_dim, proj_dim, dropout_p).to(device)
     target_net.load_state_dict(online_net.state_dict())
-    optimizer = optim.Adam(online_net.parameters(), lr=lr, weight_decay=1e-6)
+    optimizer = optim.Adam(online_net.parameters(), lr=lr)#, weight_decay=1e-6)
 
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=90, eta_min=eta_min)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=eta_min)
       
     replay = PrioritizedReplayBuffer(
         capacity=replay_capacity, 
