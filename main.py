@@ -15,7 +15,7 @@ def main():
     # embed('train')
 
     # Get CosSim results and rankings
-    cos_sim()
+    #cos_sim()
 
     # Traing of RL Model
     # train()
@@ -28,7 +28,7 @@ def main():
     # Evaluate RL model on test data using trained model
     #test()
 
-    # analyze()
+    analyze()
 
 
 

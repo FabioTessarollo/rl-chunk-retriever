@@ -243,78 +243,58 @@ def process_all_queries(final_data, completeness_threshold, topk, return_avg_sco
 
     # Variation (using F1 as the primary comparison)
     variation = ((rl_f1_avg - cs_f1_avg) / cs_f1_avg) * 100
-    print(f"\nF1 Score Variation: {variation:.4f}%")
+    print(f"\nF1 Score Variation: {(rl_f1_avg - cs_f1_avg):.4f}, {variation:.4f}%")
 
     return filtered_results
 
 def plot_relevance_coverage(thresholds, final_data):
 
-    results = {
-        "f1":        {"rl": [], "cs": []},
-        "recall":    {"rl": [], "cs": []},
-        "precision": {"rl": [], "cs": []},
-    }
+    rl_recall, cs_recall = [], []
 
     for t in thresholds:
         rl_f1, rl_rec, rl_prec, cs_f1, cs_rec, cs_prec = process_all_queries(
             final_data, t, topk=100, return_avg_scores=True
         )
-        results["f1"]["rl"].append(rl_f1)
-        results["f1"]["cs"].append(cs_f1)
-        results["recall"]["rl"].append(rl_rec)
-        results["recall"]["cs"].append(cs_rec)
-        results["precision"]["rl"].append(rl_prec)
-        results["precision"]["cs"].append(cs_prec)
+        rl_recall.append(rl_rec)
+        cs_recall.append(cs_rec)
 
-    # ── Style ──────────────────────────────────────────────────────────────────
-    BLUE  = "#3B82F6"
-    CORAL = "#F97316"
-    GRID  = "#E5E7EB"
-    BG    = "#F9FAFB"
+    thresholds_arr = np.array(thresholds)
 
-    plt.rcParams.update({
-        "font.family": "serif",
-        "axes.spines.top": False,
-        "axes.spines.right": False,
-        "axes.facecolor": BG,
-        "figure.facecolor": "white",
-    })
+    # Fit straight lines
+    rl_fit = np.poly1d(np.polyfit(thresholds_arr, rl_recall, 1))
+    cs_fit = np.poly1d(np.polyfit(thresholds_arr, cs_recall, 1))
 
-    score_labels = {
-        "f1":        "F1 Score",
-        "recall":    "Recall",
-        "precision": "Precision",
-    }
+    fig, ax = plt.subplots(figsize=(6, 5))
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=False)
-    fig.suptitle("RL vs Cosine Similarity Scores\nover Completeness Threshold",
-                fontsize=15, fontweight="bold", y=1.02)
+    # Data series
+    ax.plot(thresholds_arr, rl_recall,
+            color="steelblue", marker="o", linewidth=2, markersize=6, label="RL")
+    ax.plot(thresholds_arr, cs_recall,
+            color="tomato", marker="s", linewidth=2, markersize=6,
+            linestyle="--", label="Cosine Sim")
 
-    for ax, (key, label) in zip(axes, score_labels.items()):
-        rl_vals = results[key]["rl"]
-        cs_vals = results[key]["cs"]
+    # Trend lines
+    ax.plot(thresholds_arr, rl_fit(thresholds_arr),
+            color="steelblue", linewidth=1.5, linestyle=":", alpha=0.8,
+            label=f"RL trend (slope={rl_fit.c[0]:+.3f})")
+    ax.plot(thresholds_arr, cs_fit(thresholds_arr),
+            color="tomato", linewidth=1.5, linestyle=":", alpha=0.8,
+            label=f"CS trend (slope={cs_fit.c[0]:+.3f})")
 
-        ax.plot(thresholds, rl_vals,
-                color=BLUE,  marker="o", linewidth=2.2, markersize=6,
-                label="RL", zorder=3)
-        ax.plot(thresholds, cs_vals,
-                color=CORAL, marker="s", linewidth=2.2, markersize=6,
-                linestyle="--", label="Cosine Sim", zorder=3)
-
-        ax.yaxis.grid(True, color=GRID, linewidth=0.8, zorder=0)
-        ax.set_xlabel("Completeness Threshold", fontsize=11)
-        ax.set_ylabel(label, fontsize=11)
-        ax.set_title(label, fontsize=13, fontweight="bold", pad=10)
-        ax.set_xticks(thresholds)
-        ax.xaxis.set_major_formatter(ticker.FormatStrFormatter("%.1f"))
-        ax.tick_params(axis="x", rotation=45)
-        ax.legend(frameon=False, fontsize=10)
-        ax.set_xlim(-0.02, 1.02)
+    ax.set_xlabel("Completeness Threshold", fontsize=12)
+    ax.set_ylabel("Recall", fontsize=12)
+    ax.set_title("Recall: RL vs Cosine Similarity over Relevance Coverage C")
+    ax.set_xticks(thresholds_arr)
+    ax.xaxis.set_major_formatter(ticker.FormatStrFormatter("%.1f"))
+    ax.tick_params(axis="x", rotation=45)
+    ax.set_xlim(-0.02, 1.02)
+    ax.legend(fontsize=10)
+    ax.grid(True, linestyle="--", linewidth=0.7, alpha=0.7)
 
     plt.tight_layout()
-    plt.savefig("scores_over_threshold.png", dpi=150, bbox_inches="tight")
+    plt.savefig("recall_over_threshold.png", dpi=150, bbox_inches="tight")
     plt.show()
-    print("Saved → scores_over_threshold.png")
+    print("Saved → recall_over_threshold.png")
 
 def analyze():
     # Merge data
@@ -336,7 +316,7 @@ def analyze():
     print(f"Average Cosine Similarity F1 Score: {metrics['avg_cos_sim_f1_score']:.6f}")
     print(f"{'='*50}")
 
-    completeness_threshold = 1.1 # 0.8 means chunks with more than 80% relevant are removed
+    completeness_threshold = 1 # 0.8 means chunks with more than 80% relevant are removed
 
     filtered_results = process_all_queries(final_data, completeness_threshold, topk = 100)
 
