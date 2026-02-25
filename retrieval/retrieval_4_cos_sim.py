@@ -199,7 +199,7 @@ def cos_sim():
     data.load_relevant()
     data.load_cosine_sim()
 
-    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 0.8)
+    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 0.6)
 
     pages_path_test = f"data_3_embed/pages_chunked_emb_test.json"
     relevant_path_test = f"data_3_embed/relevant_chunks_emb_test.json"
@@ -241,18 +241,18 @@ def cos_sim():
     os.makedirs(output_dir, exist_ok=True)
 
     # Save train set rankings for RL model train and inference
-    output_file = os.path.join(output_dir, f"cosine_sim_rank_threshold_only_single_train.json")
-    with open(output_file, 'w') as f:
-        json.dump(all_rankings_train, f, indent=2)
+    # output_file = os.path.join(output_dir, f"cosine_sim_rank_threshold_only_single_train.json")
+    # with open(output_file, 'w') as f:
+    #     json.dump(all_rankings_train, f, indent=2)
 
-    # Save test set rankings for RL model inference
-    output_file = os.path.join(output_dir, f"cosine_sim_rank_threshold_only_single_test.json")
-    with open(output_file, 'w') as f:
-        json.dump(all_rankings_test, f, indent=2)
+    # # Save test set rankings for RL model inference
+    # output_file = os.path.join(output_dir, f"cosine_sim_rank_threshold_only_single_test.json")
+    # with open(output_file, 'w') as f:
+    #     json.dump(all_rankings_test, f, indent=2)
 
-    # Save TEST cos sim results for analysis
-    output_file = os.path.join(output_dir, f"cosine_sim_rank_retrieved_test_single.json")
-    with open(output_file, 'w') as f:
-        json.dump(cosine_sim_results, f, indent=2)
+    # # Save TEST cos sim results for analysis
+    # output_file = os.path.join(output_dir, f"cosine_sim_rank_retrieved_test_single.json")
+    # with open(output_file, 'w') as f:
+    #     json.dump(cosine_sim_results, f, indent=2)
 
 
