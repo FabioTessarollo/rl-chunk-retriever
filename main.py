@@ -18,7 +18,7 @@ def main():
     #cos_sim()
 
     # Traing of RL Model
-    # train()
+    train()
 
     # Get test data
     # extract('test')
@@ -28,7 +28,7 @@ def main():
     # Evaluate RL model on test data using trained model
     #test()
 
-    analyze()
+    # analyze()
 
 
 

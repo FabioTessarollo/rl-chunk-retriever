@@ -25,6 +25,7 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
     """Evaluate the model on validation set without training"""
     val_reward = 0
     val_f1_score = 0
+    val_recall = 0
     
     for query_id in query_ids:
         query = data.get_query_obj_from_id(query_id)
@@ -68,6 +69,8 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
                 elif action == 3:
                     next_emb, next_meta, reward, done = topic.take_prev_double()
                 elif action == 4:
+                    next_emb, next_meta, reward, done = topic.take_triple()
+                elif action == 5:
                     next_emb, next_meta, reward, done = topic.submit_current_bag()
 
                 logging.info(f"{action_log}, Action Code: {action}, Reward: {reward:.4f}")
@@ -80,13 +83,15 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
             
         val_reward += episode_reward
         val_f1_score += topic.f1_score
+        val_recall += topic.recall
 
         logging.info(f"GREEDY - Query: {query_desc}, Episode Reward: {episode_reward:.4f}, Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Relevant: {topic.relevant_chunks}, Top_10_Rank: {topic.ranked_chunks[:10]}")
     
     avg_val_reward = val_reward / len(query_ids)
     avg_val_f1_score = val_f1_score / len(query_ids)
+    avg_val_recall = val_recall / len(query_ids)
     
-    return avg_val_reward, avg_val_f1_score
+    return avg_val_reward, avg_val_f1_score, avg_val_recall
 
 def train():
 
@@ -99,7 +104,16 @@ def train():
     data.load_relevant()
     data.load_cosine_sim()
 
-    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 0.6)
+    pages_path_test = f"data_3_embed/pages_chunked_emb_test.json"
+    relevant_path_test = f"data_3_embed/relevant_chunks_emb_test.json"
+    cosine_sim_path_test = "data_4_cos_sim/cosine_sim_rank_threshold_only_single_test.json"
+
+    data_test = Data(pages_path_test, relevant_path_test, cosine_sim_path_test)
+    data_test.load_pages()
+    data_test.load_relevant()
+    data_test.load_cosine_sim()
+
+    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 1)
 
     best_score = 0
     metadata_dim = 9
@@ -115,7 +129,7 @@ def train():
     target_update = 2000 ############### PROVARE A DIMINUIRE
     epochs = 60# 31 #24
     max_exp_loops = 1
-    action_dim = 5
+    action_dim = 6
     dropout_p = 0
     scheduler_type = "cosine"
     per_alpha = 0.6
@@ -224,6 +238,8 @@ def train():
                 elif action == 3:
                     next_emb, next_meta, reward, done = topic.take_prev_double()
                 elif action == 4:
+                    next_emb, next_meta, reward, done = topic.take_triple()
+                elif action == 5:
                     next_emb, next_meta, reward, done = topic.submit_current_bag()
 
                 logging.info(f"{action_log}, Action Code: {action}, Reward: {reward:.4f}, Rand: {int(rand)}")
@@ -298,24 +314,32 @@ def train():
 
         
         # Greedy evaluation
-        if epoch > 40:
-            online_net.eval()
+        # if epoch > 40:
+        #     online_net.eval()
 
-            avg_train_reward, avg_train_f1_score = evaluate(
-                data, train_set, online_net, device, 
+        #     avg_train_reward, avg_train_f1_score = evaluate(
+        #         data, train_set, online_net, device, 
+        #         max_exp_loops
+        #     )
+        #     logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
+        #     print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
+        #     train_f1_scores.append(avg_train_f1_score)
+
+        #     avg_val_reward, avg_val_f1_score = evaluate(
+        #         data, validation_set, online_net, device, 
+        #         max_exp_loops
+        #     )
+        #     logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
+        #     print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
+        #     val_f1_scores.append(avg_val_f1_score)
+
+
+        if epoch > 20:
+            avg_val_reward, avg_val_f1_score, recall = evaluate(
+                data_test, data_test.query_ids, online_net, device, 
                 max_exp_loops
             )
-            logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
-            print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
-            train_f1_scores.append(avg_train_f1_score)
-
-            avg_val_reward, avg_val_f1_score = evaluate(
-                data, validation_set, online_net, device, 
-                max_exp_loops
-            )
-            logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
-            print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
-            val_f1_scores.append(avg_val_f1_score)
+            print(f"TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall:.4f}")
 
         #     if es.step(avg_val_f1_score):
         #         print(f"Early stopping at epoch {epoch}")

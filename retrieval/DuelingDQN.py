@@ -34,7 +34,7 @@ class DuelingDQN(nn.Module):
         # split concatenated embeddings
         current, next, prev, query, bag = torch.split(state_embedding, 768, dim=-1)
         current_and_next = torch.cat([current, next], dim=-1)
-        current_and_prev = torch.cat([current, prev], dim=-1)
+        current_and_prev = torch.cat([prev, current], dim=-1)
 
         # project each separately
         c = F.relu(self.single_proj(current))
