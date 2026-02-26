@@ -12,6 +12,7 @@ class DuelingDQN(nn.Module):
 
         self.single_proj = nn.Linear(768, proj_dim)
         self.double_proj = nn.Linear(768*2, proj_dim)
+        self.prev_double_proj = nn.Linear(768*2, proj_dim)
         self.query_proj = nn.Linear(768, proj_dim)
         self.bag_proj   = nn.Linear(768, proj_dim)
 
@@ -39,7 +40,7 @@ class DuelingDQN(nn.Module):
         # project each separately
         c = F.relu(self.single_proj(current))
         cn = F.relu(self.double_proj(current_and_next))
-        cp = F.relu(self.double_proj(current_and_prev))
+        cp = F.relu(self.prev_double_proj(current_and_prev))
         q = F.relu(self.query_proj(query))
         b = F.relu(self.bag_proj(bag))
 

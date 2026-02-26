@@ -57,10 +57,7 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
             
                 action_log = f"Chunk: {topic.current_chunk_id}"
                 
-                if topic.current_loop + 1 > max_exp_loops:
-                    action = 4
-                    next_emb, next_meta, reward, done = topic.submit_current_bag()
-                elif action == 0:
+                if action == 0:
                     next_emb, next_meta, reward, done = topic.skip()
                 elif action == 1:
                     next_emb, next_meta, reward, done = topic.take_single()
@@ -70,8 +67,6 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
                     next_emb, next_meta, reward, done = topic.take_prev_double()
                 elif action == 4:
                     next_emb, next_meta, reward, done = topic.take_triple()
-                elif action == 5:
-                    next_emb, next_meta, reward, done = topic.submit_current_bag()
 
                 logging.info(f"{action_log}, Action Code: {action}, Reward: {reward:.4f}")
                 

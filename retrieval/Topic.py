@@ -26,9 +26,7 @@ class Topic:
     def _advance_rank(self):
         # go next: restart if last -1 in the rank, else go next
         if self.current_rank_chunk == len(self.ranked_chunks) - 1:
-            self.current_loop += 1
-            self.current_rank_chunk = 0
-            self.current_chunk_id = self.ranked_chunks[0]
+            self.done = True
         else:
             self.current_rank_chunk += 1
             self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
@@ -259,20 +257,3 @@ class Topic:
             state_metadata = self.get_state_metadata()
 
             return (state_embedding, state_metadata, reward, self.done)
-
-    def submit_current_bag(self):
-
-        self.done = True
-
-        self.set_f1_score()
-
-        if len(self.bag_of_chunks) == 0:
-            reward = -10
-        else:
-            reward = self.f1_score*10
-
-        self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
-        state_embedding = self.get_state_embedding()
-        state_metadata = self.get_state_metadata()
-
-        return (state_embedding, state_metadata, reward, self.done)
