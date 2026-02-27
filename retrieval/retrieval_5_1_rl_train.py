@@ -45,10 +45,11 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
         state_meta = state_meta.to(device)
         episode_reward = 0
         done = False
+        truncated = False
         episode_steps = 0
         
         # Greedy evaluation (no exploration)
-        while not done:
+        while not done and not truncated:
             episode_steps += 1
             
             with torch.no_grad():
@@ -58,15 +59,15 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
                 action_log = f"Chunk: {topic.current_chunk_id}"
                 
                 if action == 0:
-                    next_emb, next_meta, reward, done = topic.skip()
+                    next_emb, next_meta, reward, done, truncated = topic.skip()
                 elif action == 1:
-                    next_emb, next_meta, reward, done = topic.take_single()
+                    next_emb, next_meta, reward, done, truncated= topic.take_single()
                 elif action == 2:
-                    next_emb, next_meta, reward, done = topic.take_double()
+                    next_emb, next_meta, reward, done, truncated = topic.take_double()
                 elif action == 3:
-                    next_emb, next_meta, reward, done = topic.take_prev_double()
+                    next_emb, next_meta, reward, done, truncated = topic.take_prev_double()
                 elif action == 4:
-                    next_emb, next_meta, reward, done = topic.take_triple()
+                    next_emb, next_meta, reward, done, truncated = topic.take_triple()
 
                 logging.info(f"{action_log}, Action Code: {action}, Reward: {reward:.4f}")
                 
@@ -111,7 +112,7 @@ def train():
     train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 1)
 
     best_score = 0
-    metadata_dim = 9
+    metadata_dim = 6
     epsilon = 1.0
 
     proj_dim = 512
@@ -120,17 +121,17 @@ def train():
     epsilon_decay = 0.99995
     batch_size = 32
     replay_capacity = 50000
-    lr = 2e-5
+    lr = 5e-5
     target_update = 2000 ############### PROVARE A DIMINUIRE
     epochs = 60# 31 #24
     max_exp_loops = 1
-    action_dim = 6
+    action_dim = 5
     dropout_p = 0
     scheduler_type = "cosine"
     per_alpha = 0.6
     per_beta = 0.4
     per_beta_increment = 0.001
-    eta_min = 0.000001
+    eta_min = 1e-6
     warm_up_epoches = 30
     neg_schedule = torch.linspace(0.2, 1.0, steps=warm_up_epoches)
 
@@ -144,7 +145,7 @@ def train():
     online_net = DuelingDQN(metadata_dim, action_dim, proj_dim, dropout_p).to(device)
     target_net = DuelingDQN(metadata_dim, action_dim, proj_dim, dropout_p).to(device)
     target_net.load_state_dict(online_net.state_dict())
-    optimizer = optim.Adam(online_net.parameters(), lr=lr)#, weight_decay=1e-6)
+    optimizer = optim.Adam(online_net.parameters(), lr=lr, weight_decay=1e-5)
 
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=90, eta_min=eta_min)
       
@@ -205,9 +206,10 @@ def train():
             state_meta = state_meta.to(device)
             episode_reward = 0
             done = False
+            truncated = False
             episode_steps = 0
 
-            while not done:
+            while not done and not truncated:
                 episode_steps += 1
                 step_count += 1
                 if random.random() < epsilon:
@@ -221,21 +223,16 @@ def train():
                 
                 action_log = f"Chunk: {topic.current_chunk_id}"
                 
-                if topic.current_loop + 1 > max_exp_loops:
-                    action = 4
-                    next_emb, next_meta, reward, done = topic.submit_current_bag()
-                elif action == 0:
-                    next_emb, next_meta, reward, done = topic.skip()
+                if action == 0:
+                    next_emb, next_meta, reward, done, truncated = topic.skip()
                 elif action == 1:
-                    next_emb, next_meta, reward, done = topic.take_single()
+                    next_emb, next_meta, reward, done, truncated= topic.take_single()
                 elif action == 2:
-                    next_emb, next_meta, reward, done = topic.take_double()
+                    next_emb, next_meta, reward, done, truncated = topic.take_double()
                 elif action == 3:
-                    next_emb, next_meta, reward, done = topic.take_prev_double()
+                    next_emb, next_meta, reward, done, truncated = topic.take_prev_double()
                 elif action == 4:
-                    next_emb, next_meta, reward, done = topic.take_triple()
-                elif action == 5:
-                    next_emb, next_meta, reward, done = topic.submit_current_bag()
+                    next_emb, next_meta, reward, done, truncated = topic.take_triple()
 
                 logging.info(f"{action_log}, Action Code: {action}, Reward: {reward:.4f}, Rand: {int(rand)}")
                     
