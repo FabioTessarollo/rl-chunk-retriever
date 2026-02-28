@@ -121,9 +121,9 @@ def train():
     epsilon_decay = 0.99995
     batch_size = 32
     replay_capacity = 50000
-    lr = 5e-5
+    lr = 2e-5
     target_update = 2000 ############### PROVARE A DIMINUIRE
-    epochs = 60# 31 #24
+    epochs = 30# 31 #24
     max_exp_loops = 1
     action_dim = 5
     dropout_p = 0
@@ -132,8 +132,8 @@ def train():
     per_beta = 0.4
     per_beta_increment = 0.001
     eta_min = 1e-6
-    warm_up_epoches = 30
-    neg_schedule = torch.linspace(0.2, 1.0, steps=warm_up_epoches)
+    warm_up_epoches = 90
+    neg_schedule = torch.linspace(0.05, 1.0, steps=warm_up_epoches)
 
 
     es = EarlyStopping(patience=10, delta_ratio=0.001) #12? #15? #10?
@@ -147,7 +147,7 @@ def train():
     target_net.load_state_dict(online_net.state_dict())
     optimizer = optim.Adam(online_net.parameters(), lr=lr, weight_decay=1e-5)
 
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=90, eta_min=eta_min)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=40, eta_min=eta_min)
       
     replay = PrioritizedReplayBuffer(
         capacity=replay_capacity, 
@@ -307,23 +307,23 @@ def train():
         
         # Greedy evaluation
         # if epoch > 40:
-        #     online_net.eval()
+        # online_net.eval()
 
-        #     avg_train_reward, avg_train_f1_score = evaluate(
-        #         data, train_set, online_net, device, 
-        #         max_exp_loops
-        #     )
-        #     logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
-        #     print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}")
-        #     train_f1_scores.append(avg_train_f1_score)
+        # avg_train_reward, avg_train_f1_score, recall_train = evaluate(
+        #     data, train_set, online_net, device, 
+        #     max_exp_loops
+        # )
+        # logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
+        # print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}, Recall: {recall_train:.4f}")
+        # train_f1_scores.append(avg_train_f1_score)
 
-        #     avg_val_reward, avg_val_f1_score = evaluate(
-        #         data, validation_set, online_net, device, 
-        #         max_exp_loops
-        #     )
-        #     logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
-        #     print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
-        #     val_f1_scores.append(avg_val_f1_score)
+        # avg_val_reward, avg_val_f1_score, recall_val = evaluate(
+        #     data, validation_set, online_net, device, 
+        #     max_exp_loops
+        # )
+        # logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
+        # print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall: {recall_val:.4f}")
+        # val_f1_scores.append(avg_val_f1_score)
 
 
         if epoch > 20:
@@ -333,22 +333,22 @@ def train():
             )
             print(f"TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall:.4f}")
 
-        #     if es.step(avg_val_f1_score):
-        #         print(f"Early stopping at epoch {epoch}")
-        #         break
+            # if es.step(avg_val_f1_score):
+            #     print(f"Early stopping at epoch {epoch}")
+            #     break
 
     extra_logger.info(f"{now_str}\t{proj_dim}\t{gamma}\t{epsilon_min}\t{epsilon_decay}\t{batch_size}\t{replay_capacity}\t{lr}\t{target_update}\t{epochs}\t{max_exp_loops}\t{action_dim}\t{scheduler_type}\t{per_alpha}\t{per_beta}\t{per_beta_increment}\t{dropout_p}\t{best_score:.4f}")
     
-    # plt.figure(figsize=(7,5))
-    # plt.plot(train_f1_scores, label='train')
-    # plt.plot(val_f1_scores, label='val')
-    # plt.legend()
-    # plt.xlabel('Epoches')
-    # plt.ylabel('F1 Score')
-    # plt.title('Train and Validation F1 Scores')
-    # plt.legend()
-    # plt.grid(True)
-    # plt.savefig('train_vs_val.png')
+    plt.figure(figsize=(7,5))
+    plt.plot(train_f1_scores, label='train')
+    plt.plot(val_f1_scores, label='val')
+    plt.legend()
+    plt.xlabel('Epoches')
+    plt.ylabel('F1 Score')
+    plt.title('Train and Validation F1 Scores')
+    plt.legend()
+    plt.grid(True)
+    plt.savefig('train_vs_val_3c.png')
 
     # trained_model_path = "models/rl-chunk-retriever.pt"
     # torch.save(online_net.state_dict(), trained_model_path)
