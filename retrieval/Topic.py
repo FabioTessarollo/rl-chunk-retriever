@@ -106,7 +106,7 @@ class Topic:
         if self.current_chunk_id in self.relevant_chunks:
             reward = -1.5
             if self.current_rank_chunk < 3 and self.current_chunk_id not in self.bag_of_chunks:
-                reward -= (1 - self.current_rank_chunk/3)*2
+                reward -= (1 - self.current_rank_chunk/3)
         else:
             reward = 0
 

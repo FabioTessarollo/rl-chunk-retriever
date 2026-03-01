@@ -126,7 +126,7 @@ def train():
     replay_capacity = 50000
     lr = 2e-5
     target_update = 3000 ############### PROVARE A DIMINUIRE
-    epochs = 60# 31 #24
+    epochs = 40# 31 #24
     max_exp_loops = 1
     action_dim = 5
     dropout_p = 0
@@ -135,7 +135,7 @@ def train():
     per_beta = 0.4
     per_beta_increment = 0.001
     eta_min = 1e-7
-    warm_up_epoches = 40
+    warm_up_epoches = 60
     neg_schedule = torch.linspace(0.1, 1.0, steps=warm_up_epoches)
 
 
@@ -150,7 +150,7 @@ def train():
     target_net.load_state_dict(online_net.state_dict())
     optimizer = optim.Adam(online_net.parameters(), lr=lr, weight_decay=5e-5)
 
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=60, eta_min=eta_min)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=40, eta_min=eta_min)
       
     replay = PrioritizedReplayBuffer(
         capacity=replay_capacity, 
@@ -329,7 +329,7 @@ def train():
         # val_f1_scores.append(avg_val_f1_score)
 
 
-        if epoch > 20:
+        if epoch > 15:
             avg_val_reward, avg_val_f1_score, recall, precision = evaluate(
                 data_test, data_test.query_ids, online_net, device, 
                 max_exp_loops
