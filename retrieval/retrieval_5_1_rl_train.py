@@ -120,12 +120,12 @@ def train():
 
     proj_dim = 512
     gamma = 0.99
-    epsilon_min = 0.1
+    epsilon_min = 0.01
     epsilon_decay = 0.99995
     batch_size = 32
     replay_capacity = 50000
     lr = 2e-5
-    target_update = 3000 ############### PROVARE A DIMINUIRE
+    target_update = 2000 ############### PROVARE A DIMINUIRE
     epochs = 40# 31 #24
     max_exp_loops = 1
     action_dim = 5
@@ -134,8 +134,8 @@ def train():
     per_alpha = 0.6
     per_beta = 0.4
     per_beta_increment = 0.001
-    eta_min = 1e-7
-    warm_up_epoches = 60
+    eta_min = 1e-6
+    warm_up_epoches = 80
     neg_schedule = torch.linspace(0.1, 1.0, steps=warm_up_epoches)
 
 
