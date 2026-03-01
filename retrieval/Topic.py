@@ -104,7 +104,7 @@ class Topic:
     def skip(self):
 
         if self.current_chunk_id in self.relevant_chunks:
-            reward = -1
+            reward = -1.5
             if self.current_rank_chunk < 3 and self.current_chunk_id not in self.bag_of_chunks:
                 reward -= (1 - self.current_rank_chunk/3)*2
         else:
@@ -123,7 +123,7 @@ class Topic:
         if self.current_chunk_id in self.relevant_chunks:
             reward = 1
         else:
-            reward = -0.75
+            reward = -1
 
         # update bag mean embedding
         if self.current_chunk_id not in self.bag_of_chunks:
@@ -153,11 +153,11 @@ class Topic:
             both_relevant = c1 in self.relevant_chunks and c2 in self.relevant_chunks
             one_is_relevant = c1 in self.relevant_chunks or c2 in self.relevant_chunks
             if both_relevant:
-                reward = 3
+                reward = 2
             elif one_is_relevant:
                 reward = 0
             else:
-                reward = -1
+                reward = -2
 
             # update bag mean embedding, if at least one is not already in the bag
             if c1 not in self.bag_of_chunks:
@@ -191,11 +191,11 @@ class Topic:
             both_relevant = c1 in self.relevant_chunks and c2 in self.relevant_chunks
             one_is_relevant = c1 in self.relevant_chunks or c2 in self.relevant_chunks
             if both_relevant:
-                reward = 3
+                reward = 2
             elif one_is_relevant:
                 reward = 0
             else:
-                reward = -1
+                reward = -2
 
             # update bag mean embedding, if at least one is not already in the bag
             if c1 not in self.bag_of_chunks:
@@ -231,13 +231,13 @@ class Topic:
             relevant_selected = sum(1 for c in selected if c in self.relevant_chunks)
 
             if relevant_selected == 3:
-                reward = 4
+                reward = 3
             elif relevant_selected == 2:
-                reward = 2
+                reward = 1
             elif relevant_selected == 1:
                 reward = -1
             else:  
-                reward = -2
+                reward = -3
 
             # update bag mean embedding, if at least one is not already in the bag
             if c1 not in self.bag_of_chunks:
