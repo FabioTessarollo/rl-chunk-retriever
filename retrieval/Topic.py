@@ -15,6 +15,7 @@ class Topic:
         self.max_chunk_id = max(page_chunks_dict.keys())
         self.f1_score = 0
         self.recall = 0
+        self.precision = 0
         self.device = torch.device("mps")
         self.bag_of_chunks_embedding = torch.zeros(len(query_emb), dtype=torch.float32, device = self.device)
         self.current_loop = 0
@@ -77,9 +78,9 @@ class Topic:
         TP = len([c for c in self.bag_of_chunks if c in self.relevant_chunks])
         
         self.recall = TP / relevant_size if relevant_size > 0 else 0
-        precision = TP / bag_size if bag_size > 0 else 0
+        self.precision = TP / bag_size if bag_size > 0 else 0
 
-        self.f1_score = (2 * precision * self.recall) / (precision + self.recall) if (precision + self.recall) > 0 else 0
+        self.f1_score = (2 * self.precision * self.recall) / (self.precision + self.recall) if (self.precision + self.recall) > 0 else 0
     
     def get_state_embedding(self):
 
@@ -103,7 +104,7 @@ class Topic:
     def skip(self):
 
         if self.current_chunk_id in self.relevant_chunks:
-            reward = -2
+            reward = -1
             if self.current_rank_chunk < 3 and self.current_chunk_id not in self.bag_of_chunks:
                 reward -= (1 - self.current_rank_chunk/3)*2
         else:
@@ -152,11 +153,11 @@ class Topic:
             both_relevant = c1 in self.relevant_chunks and c2 in self.relevant_chunks
             one_is_relevant = c1 in self.relevant_chunks or c2 in self.relevant_chunks
             if both_relevant:
-                reward = 2.5
+                reward = 3
             elif one_is_relevant:
                 reward = 0
             else:
-                reward = -1.25
+                reward = -1
 
             # update bag mean embedding, if at least one is not already in the bag
             if c1 not in self.bag_of_chunks:
@@ -190,11 +191,11 @@ class Topic:
             both_relevant = c1 in self.relevant_chunks and c2 in self.relevant_chunks
             one_is_relevant = c1 in self.relevant_chunks or c2 in self.relevant_chunks
             if both_relevant:
-                reward = 2.5
+                reward = 3
             elif one_is_relevant:
                 reward = 0
             else:
-                reward = -1.25
+                reward = -1
 
             # update bag mean embedding, if at least one is not already in the bag
             if c1 not in self.bag_of_chunks:
@@ -234,9 +235,9 @@ class Topic:
             elif relevant_selected == 2:
                 reward = 2
             elif relevant_selected == 1:
-                reward = -0.75
+                reward = -1
             else:  
-                reward = -1.75
+                reward = -2
 
             # update bag mean embedding, if at least one is not already in the bag
             if c1 not in self.bag_of_chunks:

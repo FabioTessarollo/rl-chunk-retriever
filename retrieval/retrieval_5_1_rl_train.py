@@ -26,6 +26,7 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
     val_reward = 0
     val_f1_score = 0
     val_recall = 0
+    val_precision = 0
     
     for query_id in query_ids:
         query = data.get_query_obj_from_id(query_id)
@@ -80,14 +81,16 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
         val_reward += episode_reward
         val_f1_score += topic.f1_score
         val_recall += topic.recall
+        val_precision += topic.precision
 
         logging.info(f"GREEDY - Query: {query_desc}, Episode Reward: {episode_reward:.4f}, Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Relevant: {topic.relevant_chunks}, Top_10_Rank: {topic.ranked_chunks[:10]}")
     
     avg_val_reward = val_reward / len(query_ids)
     avg_val_f1_score = val_f1_score / len(query_ids)
     avg_val_recall = val_recall / len(query_ids)
+    avg_val_precision = val_precision / len(query_ids)
     
-    return avg_val_reward, avg_val_f1_score, avg_val_recall
+    return avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision
 
 def train():
 
@@ -123,7 +126,7 @@ def train():
     replay_capacity = 50000
     lr = 2e-5
     target_update = 2000 ############### PROVARE A DIMINUIRE
-    epochs = 30# 31 #24
+    epochs = 40# 31 #24
     max_exp_loops = 1
     action_dim = 5
     dropout_p = 0
@@ -132,8 +135,8 @@ def train():
     per_beta = 0.4
     per_beta_increment = 0.001
     eta_min = 1e-6
-    warm_up_epoches = 90
-    neg_schedule = torch.linspace(0.05, 1.0, steps=warm_up_epoches)
+    warm_up_epoches = 60
+    neg_schedule = torch.linspace(0.1, 1.0, steps=warm_up_epoches)
 
 
     es = EarlyStopping(patience=10, delta_ratio=0.001) #12? #15? #10?
@@ -221,7 +224,7 @@ def train():
                         q = online_net(state_emb.unsqueeze(0), state_meta.unsqueeze(0))
                         action = q.argmax().item()
                 
-                action_log = f"Chunk: {topic.current_chunk_id}"
+                #action_log = f"Chunk: {topic.current_chunk_id}"
                 
                 if action == 0:
                     next_emb, next_meta, reward, done, truncated = topic.skip()
@@ -234,7 +237,7 @@ def train():
                 elif action == 4:
                     next_emb, next_meta, reward, done, truncated = topic.take_triple()
 
-                logging.info(f"{action_log}, Action Code: {action}, Reward: {reward:.4f}, Rand: {int(rand)}")
+                #logging.info(f"{action_log}, Action Code: {action}, Reward: {reward:.4f}, Rand: {int(rand)}")
                     
                 next_emb = next_emb.to(device)
                 next_meta = next_meta.to(device)
@@ -309,29 +312,29 @@ def train():
         # if epoch > 40:
         # online_net.eval()
 
-        # avg_train_reward, avg_train_f1_score, recall_train = evaluate(
+        # avg_train_reward, avg_train_f1_score, recall_train, precision_train = evaluate(
         #     data, train_set, online_net, device, 
         #     max_exp_loops
         # )
         # logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
-        # print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}, Recall: {recall_train:.4f}")
+        # print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}, Recall {recall_train:.4f}, Precision {precision_train:.4f}")
         # train_f1_scores.append(avg_train_f1_score)
 
-        # avg_val_reward, avg_val_f1_score, recall_val = evaluate(
+        # avg_val_reward, avg_val_f1_score, recall_val, precision_val = evaluate(
         #     data, validation_set, online_net, device, 
         #     max_exp_loops
         # )
         # logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
-        # print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall: {recall_val:.4f}")
+        # print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall_val:.4f}, Precision {precision_val:.4f}")
         # val_f1_scores.append(avg_val_f1_score)
 
 
         if epoch > 20:
-            avg_val_reward, avg_val_f1_score, recall = evaluate(
+            avg_val_reward, avg_val_f1_score, recall, precision = evaluate(
                 data_test, data_test.query_ids, online_net, device, 
                 max_exp_loops
             )
-            print(f"TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall:.4f}")
+            print(f"TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall:.4f}, Precision {precision:.4f}")
 
             # if es.step(avg_val_f1_score):
             #     print(f"Early stopping at epoch {epoch}")
