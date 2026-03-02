@@ -121,11 +121,11 @@ def train():
     proj_dim = 512
     gamma = 0.99
     epsilon_min = 0.1
-    epsilon_decay = 0.99995
+    epsilon_decay = 0.9999
     batch_size = 32
-    replay_capacity = 50000
-    lr = 5e-5
-    target_update = 3000 ############### PROVARE A DIMINUIRE
+    replay_capacity = 40000
+    lr = 3e-5
+    target_update = 4000 ############### PROVARE A DIMINUIRE
     epochs = 40# 31 #24
     max_exp_loops = 1
     action_dim = 5
@@ -135,8 +135,8 @@ def train():
     per_beta = 0.4
     per_beta_increment = 0.001
     eta_min = 5e-6
-    warm_up_epoches = 100
-    neg_schedule = torch.linspace(0.2, 0.7, steps=warm_up_epoches)
+    warm_up_epoches = 40
+    neg_schedule = torch.linspace(0.2, 0.3, steps=warm_up_epoches)
 
 
     es = EarlyStopping(patience=10, delta_ratio=0.001) #12? #15? #10?
@@ -148,9 +148,9 @@ def train():
     online_net = DuelingDQN(metadata_dim, action_dim, proj_dim, dropout_p).to(device)
     target_net = DuelingDQN(metadata_dim, action_dim, proj_dim, dropout_p).to(device)
     target_net.load_state_dict(online_net.state_dict())
-    optimizer = optim.Adam(online_net.parameters(), lr=lr, weight_decay=5e-5)
+    optimizer = optim.Adam(online_net.parameters(), lr=lr, weight_decay=1e-4)
 
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30, eta_min=eta_min)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=40, eta_min=eta_min)
       
     replay = PrioritizedReplayBuffer(
         capacity=replay_capacity, 
@@ -351,7 +351,7 @@ def train():
     plt.title('Train and Validation F1 Scores')
     plt.legend()
     plt.grid(True)
-    plt.savefig('train_vs_val_3c.png')
+    plt.savefig('train_vs_val_3c_2.png')
 
     # trained_model_path = "models/rl-chunk-retriever.pt"
     # torch.save(online_net.state_dict(), trained_model_path)
