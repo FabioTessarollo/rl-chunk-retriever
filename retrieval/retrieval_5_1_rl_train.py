@@ -120,12 +120,12 @@ def train():
 
     proj_dim = 512
     gamma = 0.99
-    epsilon_min = 0.01
+    epsilon_min = 0.1
     epsilon_decay = 0.99995
     batch_size = 32
     replay_capacity = 50000
-    lr = 2e-5
-    target_update = 2000 ############### PROVARE A DIMINUIRE
+    lr = 5e-5
+    target_update = 3000 ############### PROVARE A DIMINUIRE
     epochs = 40# 31 #24
     max_exp_loops = 1
     action_dim = 5
@@ -134,9 +134,9 @@ def train():
     per_alpha = 0.6
     per_beta = 0.4
     per_beta_increment = 0.001
-    eta_min = 1e-6
-    warm_up_epoches = 80
-    neg_schedule = torch.linspace(0.1, 1.0, steps=warm_up_epoches)
+    eta_min = 5e-6
+    warm_up_epoches = 100
+    neg_schedule = torch.linspace(0.2, 0.7, steps=warm_up_epoches)
 
 
     es = EarlyStopping(patience=10, delta_ratio=0.001) #12? #15? #10?
@@ -150,7 +150,7 @@ def train():
     target_net.load_state_dict(online_net.state_dict())
     optimizer = optim.Adam(online_net.parameters(), lr=lr, weight_decay=5e-5)
 
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=40, eta_min=eta_min)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=30, eta_min=eta_min)
       
     replay = PrioritizedReplayBuffer(
         capacity=replay_capacity, 

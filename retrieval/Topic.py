@@ -104,7 +104,7 @@ class Topic:
     def skip(self):
 
         if self.current_chunk_id in self.relevant_chunks:
-            reward = -1
+            reward = -1.5
             if self.current_rank_chunk < 3 and self.current_chunk_id not in self.bag_of_chunks:
                 reward -= (1 - self.current_rank_chunk/3)
         else:
@@ -155,7 +155,7 @@ class Topic:
             if both_relevant:
                 reward = 2
             elif one_is_relevant:
-                reward = 0
+                reward = 0.5
             else:
                 reward = -2
 
@@ -193,7 +193,7 @@ class Topic:
             if both_relevant:
                 reward = 2
             elif one_is_relevant:
-                reward = 0
+                reward = 0.5
             else:
                 reward = -2
 
@@ -233,7 +233,7 @@ class Topic:
             if relevant_selected == 3:
                 reward = 3
             elif relevant_selected == 2:
-                reward = 1
+                reward = 1.5
             elif relevant_selected == 1:
                 reward = -1
             else:  
