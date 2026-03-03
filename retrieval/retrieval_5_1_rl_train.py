@@ -126,7 +126,7 @@ def train():
     replay_capacity = 40000
     lr = 3e-5
     target_update = 4000 ############### PROVARE A DIMINUIRE
-    epochs = 40# 31 #24
+    epochs = 50# 31 #24
     max_exp_loops = 1
     action_dim = 5
     dropout_p = 0
@@ -135,8 +135,8 @@ def train():
     per_beta = 0.4
     per_beta_increment = 0.001
     eta_min = 5e-6
-    warm_up_epoches = 40
-    neg_schedule = torch.linspace(0.2, 0.3, steps=warm_up_epoches)
+    warm_up_epoches = 50
+    neg_schedule = torch.linspace(0.23, 0.38, steps=warm_up_epoches)
 
 
     es = EarlyStopping(patience=10, delta_ratio=0.001) #12? #15? #10?
@@ -329,7 +329,7 @@ def train():
         # val_f1_scores.append(avg_val_f1_score)
 
 
-        if epoch > 15:
+        if epoch > 10:
             avg_val_reward, avg_val_f1_score, recall, precision = evaluate(
                 data_test, data_test.query_ids, online_net, device, 
                 max_exp_loops
