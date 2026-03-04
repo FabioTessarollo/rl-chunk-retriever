@@ -94,7 +94,7 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
     avg_val_recall = val_recall / len(query_ids)
     avg_val_precision = val_precision / len(query_ids)
 
-    print(a2b_used, a2b_used)
+    print(a2f_used, a2b_used)
 
     return avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision
 
@@ -118,7 +118,7 @@ def train():
     data_test.load_relevant()
     data_test.load_cosine_sim()
 
-    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 1)
+    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 0.6)
 
     best_score = 0
     metadata_dim = 6
@@ -174,6 +174,7 @@ def train():
     step_count = 0
     train_f1_scores = []
     val_f1_scores = []
+    val_recall_scores = []
     for epoch in range(epochs):
         online_net.train()
         epoch_reward = 0
@@ -316,23 +317,24 @@ def train():
 
         # Greedy evaluation
         # if epoch > 40:
-        # online_net.eval()
+        online_net.eval()
 
-        # avg_train_reward, avg_train_f1_score, recall_train, precision_train = evaluate(
-        #     data, train_set, online_net, device,
-        #     max_exp_loops
-        # )
-        # logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
-        # print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}, Recall {recall_train:.4f}, Precision {precision_train:.4f}")
-        # train_f1_scores.append(avg_train_f1_score)
+        avg_train_reward, avg_train_f1_score, recall_train, precision_train = evaluate(
+            data, train_set, online_net, device,
+            max_exp_loops
+        )
+        logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
+        print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}, Recall {recall_train:.4f}, Precision {precision_train:.4f}")
+        train_f1_scores.append(avg_train_f1_score)
 
-        # avg_val_reward, avg_val_f1_score, recall_val, precision_val = evaluate(
-        #     data, validation_set, online_net, device,
-        #     max_exp_loops
-        # )
-        # logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
-        # print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall_val:.4f}, Precision {precision_val:.4f}")
-        # val_f1_scores.append(avg_val_f1_score)
+        avg_val_reward, avg_val_f1_score, recall_val, precision_val = evaluate(
+            data, validation_set, online_net, device,
+            max_exp_loops
+        )
+        logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
+        print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall_val:.4f}, Precision {precision_val:.4f}")
+        val_f1_scores.append(avg_val_f1_score)
+        val_recall_scores.append(val_recall_scores)
 
 
         if epoch > 20:

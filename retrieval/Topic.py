@@ -167,7 +167,7 @@ class Topic:
             if both_relevant:
                 reward = self.TP * 2
                 if out_was_not_relevant:
-                    reward += 0.2
+                    reward += 1/8
             elif one_is_relevant:
                 reward = self.TP + self.FP
             else:
@@ -213,7 +213,7 @@ class Topic:
             if both_relevant:
                 reward = self.TP * 2
                 if out_was_not_relevant:
-                    reward += 0.2
+                    reward += 1/8
             elif one_is_relevant:
                 reward = self.TP + self.FP
             else:
