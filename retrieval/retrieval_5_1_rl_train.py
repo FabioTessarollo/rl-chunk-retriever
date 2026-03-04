@@ -27,7 +27,9 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
     val_f1_score = 0
     val_recall = 0
     val_precision = 0
-    
+    a2f_used = False
+    a2b_used = False
+
     for query_id in query_ids:
         query = data.get_query_obj_from_id(query_id)
         page_id = query.get("page_id")
@@ -48,48 +50,52 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
         done = False
         truncated = False
         episode_steps = 0
-        
+
         # Greedy evaluation (no exploration)
         while not done and not truncated:
             episode_steps += 1
-            
+
             with torch.no_grad():
                 q = online_net(state_emb.unsqueeze(0), state_meta.unsqueeze(0))
                 action = q.argmax().item()
-            
+
                 action_log = f"Chunk: {topic.current_chunk_id}"
-                
+
                 if action == 0:
                     next_emb, next_meta, reward, done, truncated = topic.skip()
                 elif action == 1:
                     next_emb, next_meta, reward, done, truncated= topic.take_single()
                 elif action == 2:
                     next_emb, next_meta, reward, done, truncated = topic.take_double()
+                    a2f_used = True
                 elif action == 3:
                     next_emb, next_meta, reward, done, truncated = topic.take_prev_double()
+                    a2b_used = True
                 elif action == 4:
                     next_emb, next_meta, reward, done, truncated = topic.take_triple()
 
                 logging.info(f"{action_log}, Action Code: {action}, Reward: {reward:.4f}")
-                
+
             next_emb = next_emb.to(device)
             next_meta = next_meta.to(device)
             episode_reward += reward
-            
+
             state_emb, state_meta = next_emb, next_meta
-            
+
         val_reward += episode_reward
         val_f1_score += topic.f1_score
         val_recall += topic.recall
         val_precision += topic.precision
 
         logging.info(f"GREEDY - Query: {query_desc}, Episode Reward: {episode_reward:.4f}, Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Relevant: {topic.relevant_chunks}, Top_10_Rank: {topic.ranked_chunks[:10]}")
-    
+
     avg_val_reward = val_reward / len(query_ids)
     avg_val_f1_score = val_f1_score / len(query_ids)
     avg_val_recall = val_recall / len(query_ids)
     avg_val_precision = val_precision / len(query_ids)
-    
+
+    print(a2b_used, a2b_used)
+
     return avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision
 
 def train():
@@ -123,10 +129,10 @@ def train():
     epsilon_min = 0.1
     epsilon_decay = 0.9999
     batch_size = 32
-    replay_capacity = 40000
+    replay_capacity = 30000
     lr = 3e-5
     target_update = 4000 ############### PROVARE A DIMINUIRE
-    epochs = 50# 31 #24
+    epochs = 40# 31 #24
     max_exp_loops = 1
     action_dim = 5
     dropout_p = 0
@@ -134,15 +140,15 @@ def train():
     per_alpha = 0.6
     per_beta = 0.4
     per_beta_increment = 0.001
-    eta_min = 5e-6
-    warm_up_epoches = 50
-    neg_schedule = torch.linspace(0.23, 0.38, steps=warm_up_epoches)
+    eta_min = 3e-6
+    warm_up_epoches = 23
+    neg_schedule = torch.linspace(0.40, 0.50, steps=50)
 
 
     es = EarlyStopping(patience=10, delta_ratio=0.001) #12? #15? #10?
 
     # Set device
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+    device = torch.device("mps")
     print(f"Using device: {device}")
 
     online_net = DuelingDQN(metadata_dim, action_dim, proj_dim, dropout_p).to(device)
@@ -151,11 +157,11 @@ def train():
     optimizer = optim.Adam(online_net.parameters(), lr=lr, weight_decay=1e-4)
 
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=40, eta_min=eta_min)
-      
+
     replay = PrioritizedReplayBuffer(
-        capacity=replay_capacity, 
-        alpha=per_alpha, 
-        beta=per_beta, 
+        capacity=replay_capacity,
+        alpha=per_alpha,
+        beta=per_beta,
         beta_increment=per_beta_increment
     )
 
@@ -197,7 +203,7 @@ def train():
                 c for c in ranked_chunks
                 if (c in relevant_chunks) or (torch.rand(1).item() < p)
             ]
-            if epoch <= warm_up_epoches and not any(item in ranked_chunks for item in relevant_chunks):
+            if not any(item in ranked_chunks for item in relevant_chunks):
                 continue
 
             logging.info(f"Epoch: {epoch}, Query: {query_desc}")
@@ -223,9 +229,9 @@ def train():
                     with torch.no_grad():
                         q = online_net(state_emb.unsqueeze(0), state_meta.unsqueeze(0))
                         action = q.argmax().item()
-                
+
                 #action_log = f"Chunk: {topic.current_chunk_id}"
-                
+
                 if action == 0:
                     next_emb, next_meta, reward, done, truncated = topic.skip()
                 elif action == 1:
@@ -238,23 +244,23 @@ def train():
                     next_emb, next_meta, reward, done, truncated = topic.take_triple()
 
                 #logging.info(f"{action_log}, Action Code: {action}, Reward: {reward:.4f}, Rand: {int(rand)}")
-                    
+
                 next_emb = next_emb.to(device)
                 next_meta = next_meta.to(device)
                 episode_reward += reward
-                
+
                 # Store on CPU to save GPU memory
                 replay.push(
-                    state_emb.cpu(), state_meta.cpu(), action, reward, 
+                    state_emb.cpu(), state_meta.cpu(), action, reward,
                     next_emb.cpu(), next_meta.cpu(), done
                 )
-                
+
                 state_emb, state_meta = next_emb, next_meta
-                
+
                 if len(replay) > batch_size:
                     # Sample from PER buffer
                     batch, idxs, is_weights = replay.sample(batch_size)
-                    
+
                     state_embs, state_metas, actions, rewards, next_embs, next_metas, dones = zip(*batch)
                     state_embs = torch.stack(state_embs).to(device)
                     state_metas = torch.stack(state_metas).to(device)
@@ -264,41 +270,41 @@ def train():
                     next_metas = torch.stack(next_metas).to(device)
                     dones = torch.tensor(dones, dtype=torch.float32).to(device)
                     is_weights = torch.tensor(is_weights, dtype=torch.float32).to(device)
-                    
+
                     # Compute Q-values and targets
                     q_values = online_net(state_embs, state_metas).gather(1, actions.unsqueeze(1)).squeeze(1)
-                    
+
                     with torch.no_grad():
                         # Double DQN: use online network to select actions, target network to evaluate
                         next_actions = online_net(next_embs, next_metas).argmax(1)
                         next_q = target_net(next_embs, next_metas).gather(1, next_actions.unsqueeze(1)).squeeze(1)
                         targets = rewards + gamma * next_q * (1 - dones)
-                    
+
                     # Compute TD errors for priority updates
                     td_errors = (q_values - targets).detach().cpu().numpy()
-                    
+
                     # Apply importance sampling weights to loss
                     elementwise_loss = F.smooth_l1_loss(q_values, targets, reduction='none')
                     loss = (is_weights * elementwise_loss).mean()
-                    
+
                     optimizer.zero_grad()
                     loss.backward()
                     optimizer.step()
-                    
+
                     # Update priorities in replay buffer
                     replay.update_priorities(idxs, td_errors)
-                
+
                 if step_count % target_update == 0:
                     target_net.load_state_dict(online_net.state_dict())
                     logging.info(f"Target network updated at global step {step_count}")
-                    
+
             epoch_reward += episode_reward
             epoch_f1_score += topic.f1_score
             logging.info(f"Episode Reward: {episode_reward:.4f}, Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Relevant: {topic.relevant_chunks}")
-            
+
             if epsilon > epsilon_min:
                 epsilon *= epsilon_decay
-                
+
         avg_epoch_reward = epoch_reward / len(train_set)
         avg_epoch_f1_score = epoch_f1_score / len(train_set)
 
@@ -307,13 +313,13 @@ def train():
 
         scheduler.step()
 
-        
+
         # Greedy evaluation
         # if epoch > 40:
         # online_net.eval()
 
         # avg_train_reward, avg_train_f1_score, recall_train, precision_train = evaluate(
-        #     data, train_set, online_net, device, 
+        #     data, train_set, online_net, device,
         #     max_exp_loops
         # )
         # logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
@@ -321,7 +327,7 @@ def train():
         # train_f1_scores.append(avg_train_f1_score)
 
         # avg_val_reward, avg_val_f1_score, recall_val, precision_val = evaluate(
-        #     data, validation_set, online_net, device, 
+        #     data, validation_set, online_net, device,
         #     max_exp_loops
         # )
         # logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
@@ -329,9 +335,10 @@ def train():
         # val_f1_scores.append(avg_val_f1_score)
 
 
-        if epoch > 10:
+        if epoch > 20:
+            online_net.eval()
             avg_val_reward, avg_val_f1_score, recall, precision = evaluate(
-                data_test, data_test.query_ids, online_net, device, 
+                data_test, data_test.query_ids, online_net, device,
                 max_exp_loops
             )
             print(f"TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall:.4f}, Precision {precision:.4f}")
@@ -341,7 +348,7 @@ def train():
             #     break
 
     extra_logger.info(f"{now_str}\t{proj_dim}\t{gamma}\t{epsilon_min}\t{epsilon_decay}\t{batch_size}\t{replay_capacity}\t{lr}\t{target_update}\t{epochs}\t{max_exp_loops}\t{action_dim}\t{scheduler_type}\t{per_alpha}\t{per_beta}\t{per_beta_increment}\t{dropout_p}\t{best_score:.4f}")
-    
+
     plt.figure(figsize=(7,5))
     plt.plot(train_f1_scores, label='train')
     plt.plot(val_f1_scores, label='val')
