@@ -14,6 +14,7 @@ class Topic:
         self.truncated = False
         self.max_chunk_id = max(page_chunks_dict.keys())
         self.f1_score = 0
+        self.reward_f1 = 0
         self.recall = 0
         self.precision = 0
         self.device = torch.device("mps")
@@ -29,15 +30,16 @@ class Topic:
         #self.max_reward = self.TP * 3
 
     def _advance_rank(self):
+        old_f1_score = self.f1_score
+        self.set_f1_score()
+        self.reward_f1 = self.f1_score - old_f1_score
         if self.current_rank_chunk == len(self.ranked_chunks) - 1:
-            self.set_f1_score()
             self.truncated = True
         else:
             self.current_rank_chunk += 1
             self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
             while self.current_chunk_id in self.bag_of_chunks:
                 if self.current_rank_chunk == len(self.ranked_chunks) - 1:
-                    self.set_f1_score()
                     self.truncated = True
                     break
                 self.current_rank_chunk += 1
@@ -107,10 +109,18 @@ class Topic:
 
     def skip(self):
 
+        c2 = self.current_chunk_id + 1
+        c3 = self.current_chunk_id - 1
+
         if self.current_chunk_id in self.relevant_chunks:
             reward = self.FN
             if self.current_rank_chunk < 5 and self.current_chunk_id not in self.bag_of_chunks:
                 reward -= (1 - self.current_rank_chunk/5)/4
+
+            if c2 in self.relevant_chunks and c3 in self.relevant_chunks:
+                reward -= 0.2
+            elif c2 in self.relevant_chunks or c3 in self.relevant_chunks:
+                reward -= 0.1
         else:
             reward = 0
 
@@ -119,7 +129,7 @@ class Topic:
         state_embedding = self.get_state_embedding()
         state_metadata = self.get_state_metadata()
 
-        reward = (reward * 3 + self.f1_score) / 4
+        reward = (reward * 3 + self.reward_f1) / 4
 
         return (state_embedding, state_metadata, reward, self.done, self.truncated)
 
@@ -145,7 +155,7 @@ class Topic:
         state_embedding = self.get_state_embedding()
         state_metadata = self.get_state_metadata()
 
-        reward = (reward * 3 + self.f1_score) / 4
+        reward = (reward * 3 + self.reward_f1) / 4
 
         return (state_embedding, state_metadata, reward, self.done, self.truncated)
 
@@ -167,7 +177,7 @@ class Topic:
             if both_relevant:
                 reward = self.TP * 2
                 if out_was_not_relevant:
-                    reward += 1/8
+                    reward += 0.15
             elif one_is_relevant:
                 reward = self.TP + self.FP
             else:
@@ -191,7 +201,7 @@ class Topic:
             state_embedding = self.get_state_embedding()
             state_metadata = self.get_state_metadata()
 
-            reward = (reward * 3 + self.f1_score) / 4
+            reward = (reward * 3 + self.reward_f1) / 4
 
             return (state_embedding, state_metadata, reward, self.done, self.truncated)
 
@@ -213,7 +223,7 @@ class Topic:
             if both_relevant:
                 reward = self.TP * 2
                 if out_was_not_relevant:
-                    reward += 1/8
+                    reward += 0.15
             elif one_is_relevant:
                 reward = self.TP + self.FP
             else:
@@ -237,7 +247,7 @@ class Topic:
             state_embedding = self.get_state_embedding()
             state_metadata = self.get_state_metadata()
 
-            reward = (reward * 3 + self.f1_score) / 4
+            reward = (reward * 3 + self.reward_f1) / 4
 
             return (state_embedding, state_metadata, reward, self.done, self.truncated)
 
@@ -263,9 +273,7 @@ class Topic:
             elif relevant_selected == 1:
                 reward = self.TP + self.FP * 2
             else:
-                reward = self.FP * 3
-
-            reward = (reward * 3 + self.f1_score) / 4
+                reward = self.FP * 3    
 
             # update bag mean embedding, if at least one is not already in the bag
             if c1 not in self.bag_of_chunks:
@@ -286,5 +294,7 @@ class Topic:
             # new state
             state_embedding = self.get_state_embedding()
             state_metadata = self.get_state_metadata()
+
+            reward = (reward * 3 + self.reward_f1) / 4
 
             return (state_embedding, state_metadata, reward, self.done, self.truncated)

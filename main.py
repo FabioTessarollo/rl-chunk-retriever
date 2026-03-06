@@ -7,6 +7,7 @@ from retrieval.retrieval_5_2_rl_test import test
 from retrieval.retrieval_5_3_analysis import analyze
 
 
+
 def main():
 
     # Get train data
@@ -19,6 +20,8 @@ def main():
 
     # Traing of RL Model
     train()
+
+    #trainv()
 
     # Get test data
     # extract('test')

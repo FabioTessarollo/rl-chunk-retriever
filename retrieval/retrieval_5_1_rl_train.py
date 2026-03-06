@@ -21,14 +21,18 @@ now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 random.seed(1)
 torch.manual_seed(1)
 
+
 def evaluate(data, query_ids, online_net, device, max_exp_loops):
     """Evaluate the model on validation set without training"""
     val_reward = 0
     val_f1_score = 0
     val_recall = 0
     val_precision = 0
-    a2f_used = False
-    a2b_used = False
+    a2f = 0
+    a2b = 0
+    a3 = 0
+    a1 = 0
+    s = 0
 
     for query_id in query_ids:
         query = data.get_query_obj_from_id(query_id)
@@ -63,16 +67,19 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
 
                 if action == 0:
                     next_emb, next_meta, reward, done, truncated = topic.skip()
+                    s += 1
                 elif action == 1:
                     next_emb, next_meta, reward, done, truncated= topic.take_single()
+                    a1 += 1
                 elif action == 2:
                     next_emb, next_meta, reward, done, truncated = topic.take_double()
-                    a2f_used = True
+                    a2f += 1
                 elif action == 3:
                     next_emb, next_meta, reward, done, truncated = topic.take_prev_double()
-                    a2b_used = True
+                    a2b += 1
                 elif action == 4:
                     next_emb, next_meta, reward, done, truncated = topic.take_triple()
+                    a3 += 1
 
                 logging.info(f"{action_log}, Action Code: {action}, Reward: {reward:.4f}")
 
@@ -94,9 +101,12 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
     avg_val_recall = val_recall / len(query_ids)
     avg_val_precision = val_precision / len(query_ids)
 
-    print(a2f_used, a2b_used)
+    print(s, a1, a2f, a2b, a3)
 
-    return avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision
+    actions_f = [s, a1, a2f, a2b, a3]
+    min_actiom, min_f = min(enumerate(actions_f), key=lambda x: x[1])
+
+    return avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision, min_actiom, min_f
 
 def train():
 
@@ -118,7 +128,7 @@ def train():
     data_test.load_relevant()
     data_test.load_cosine_sim()
 
-    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 0.6)
+    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 1)
 
     best_score = 0
     metadata_dim = 6
@@ -141,8 +151,9 @@ def train():
     per_beta = 0.4
     per_beta_increment = 0.001
     eta_min = 3e-6
-    warm_up_epoches = 23
-    neg_schedule = torch.linspace(0.40, 0.50, steps=50)
+    warm_up_epoches = 20
+    neg_schedule = torch.linspace(0.30, 0.50, steps=50)
+    min_f = 1000
 
 
     es = EarlyStopping(patience=10, delta_ratio=0.001) #12? #15? #10?
@@ -174,7 +185,6 @@ def train():
     step_count = 0
     train_f1_scores = []
     val_f1_scores = []
-    val_recall_scores = []
     for epoch in range(epochs):
         online_net.train()
         epoch_reward = 0
@@ -223,8 +233,14 @@ def train():
                 episode_steps += 1
                 step_count += 1
                 if random.random() < epsilon:
-                    rand = True
-                    action = random.randint(0, action_dim - 1)
+                    #rand = True
+                    if min_f < 100:
+                        if torch.rand(1).item() < p:
+                            action = min_actiom
+                        else:
+                            action = random.randint(0, action_dim - 1)
+                    else:
+                        action = random.randint(0, action_dim - 1)
                 else:
                     rand = False
                     with torch.no_grad():
@@ -317,29 +333,28 @@ def train():
 
         # Greedy evaluation
         # if epoch > 40:
-        online_net.eval()
+        # online_net.eval()
 
-        avg_train_reward, avg_train_f1_score, recall_train, precision_train = evaluate(
-            data, train_set, online_net, device,
-            max_exp_loops
-        )
-        logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
-        print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}, Recall {recall_train:.4f}, Precision {precision_train:.4f}")
-        train_f1_scores.append(avg_train_f1_score)
+        # avg_train_reward, avg_train_f1_score, recall_train, precision_train = evaluate(
+        #     data, train_set, online_net, device,
+        #     max_exp_loops
+        # )
+        # logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
+        # print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}, Recall {recall_train:.4f}, Precision {precision_train:.4f}")
+        # train_f1_scores.append(avg_train_f1_score)
 
-        avg_val_reward, avg_val_f1_score, recall_val, precision_val = evaluate(
-            data, validation_set, online_net, device,
-            max_exp_loops
-        )
-        logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
-        print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall_val:.4f}, Precision {precision_val:.4f}")
-        val_f1_scores.append(avg_val_f1_score)
-        val_recall_scores.append(val_recall_scores)
+        # avg_val_reward, avg_val_f1_score, recall_val, precision_val = evaluate(
+        #     data, validation_set, online_net, device,
+        #     max_exp_loops
+        # )
+        # logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
+        # print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall_val:.4f}, Precision {precision_val:.4f}")
+        # val_f1_scores.append(avg_val_f1_score)
 
 
-        if epoch > 20:
+        if epoch > 5:
             online_net.eval()
-            avg_val_reward, avg_val_f1_score, recall, precision = evaluate(
+            avg_val_reward, avg_val_f1_score, recall, precision, min_actiom, min_f = evaluate(
                 data_test, data_test.query_ids, online_net, device,
                 max_exp_loops
             )
