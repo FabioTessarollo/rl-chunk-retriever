@@ -103,10 +103,7 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
 
     print(s, a1, a2f, a2b, a3)
 
-    actions_f = [s, a1, a2f, a2b, a3]
-    min_actiom, min_f = min(enumerate(actions_f), key=lambda x: x[1])
-
-    return avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision, min_actiom, min_f
+    return avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision
 
 def train():
 
@@ -153,7 +150,6 @@ def train():
     eta_min = 3e-6
     warm_up_epoches = 20
     neg_schedule = torch.linspace(0.30, 0.50, steps=50)
-    min_f = 1000
 
 
     es = EarlyStopping(patience=10, delta_ratio=0.001) #12? #15? #10?
@@ -233,16 +229,8 @@ def train():
                 episode_steps += 1
                 step_count += 1
                 if random.random() < epsilon:
-                    #rand = True
-                    if min_f < 100:
-                        if torch.rand(1).item() < p:
-                            action = min_actiom
-                        else:
-                            action = random.randint(0, action_dim - 1)
-                    else:
-                        action = random.randint(0, action_dim - 1)
+                    action = random.randint(0, action_dim - 1)
                 else:
-                    rand = False
                     with torch.no_grad():
                         q = online_net(state_emb.unsqueeze(0), state_meta.unsqueeze(0))
                         action = q.argmax().item()
@@ -352,9 +340,9 @@ def train():
         # val_f1_scores.append(avg_val_f1_score)
 
 
-        if epoch > 5:
+        if epoch > 10:
             online_net.eval()
-            avg_val_reward, avg_val_f1_score, recall, precision, min_actiom, min_f = evaluate(
+            avg_val_reward, avg_val_f1_score, recall, precision = evaluate(
                 data_test, data_test.query_ids, online_net, device,
                 max_exp_loops
             )
