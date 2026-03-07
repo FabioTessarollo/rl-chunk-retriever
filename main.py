@@ -3,7 +3,6 @@ from etl.etl_2_chunk_and_label import chunk_and_label
 from etl.etl_3_embed import embed
 from retrieval.retrieval_4_cos_sim import cos_sim
 from retrieval.retrieval_5_1_rl_train import train
-from retrieval.retrieval_5_1_rl_trainf import trainf
 from retrieval.retrieval_5_2_rl_test import test
 from retrieval.retrieval_5_3_analysis import analyze
 
@@ -21,9 +20,6 @@ def main():
 
     # Traing of RL Model
     #train()
-    trainf()
-
-    #trainv()
 
     # Get test data
     # extract('test')
@@ -31,7 +27,7 @@ def main():
     # embed('test')
 
     # Evaluate RL model on test data using trained model
-    #test()
+    test()
 
     # analyze()
 

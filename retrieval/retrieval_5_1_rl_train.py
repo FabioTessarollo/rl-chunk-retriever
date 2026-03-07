@@ -117,15 +117,6 @@ def train():
     data.load_relevant()
     data.load_cosine_sim()
 
-    pages_path_test = f"data_3_embed/pages_chunked_emb_test.json"
-    relevant_path_test = f"data_3_embed/relevant_chunks_emb_test.json"
-    cosine_sim_path_test = "data_4_cos_sim/cosine_sim_rank_threshold_only_single_test.json"
-
-    data_test = Data(pages_path_test, relevant_path_test, cosine_sim_path_test)
-    data_test.load_pages()
-    data_test.load_relevant()
-    data_test.load_cosine_sim()
-
     train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 0.66)
 
     best_score = 0
@@ -333,9 +324,6 @@ def train():
         epoch_counts['epoch'] = epoch
         history.append(epoch_counts)
 
-
-        # Greedy evaluation
-        # if epoch > 40:
         online_net.eval()
 
         avg_train_reward, avg_train_f1_score, recall_train, precision_train = evaluate(
@@ -359,54 +347,41 @@ def train():
         val_rewards.append(avg_val_reward)
         val_recalls.append(recall_val)
 
-
-        # if epoch > 10:
-        #     online_net.eval()
-        #     avg_val_reward, avg_val_f1_score, recall, precision = evaluate(
-        #         data_test, data_test.query_ids, online_net, device,
-        #         max_exp_loops
-        #     )
-        #     print(f"TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall:.4f}, Precision {precision:.4f}")
-
-            # if es.step(avg_val_f1_score):
-            #     print(f"Early stopping at epoch {epoch}")
-            #     break
-
     extra_logger.info(f"{now_str}\t{proj_dim}\t{gamma}\t{epsilon_min}\t{epsilon_decay}\t{batch_size}\t{replay_capacity}\t{lr}\t{target_update}\t{epochs}\t{max_exp_loops}\t{action_dim}\t{scheduler_type}\t{per_alpha}\t{per_beta}\t{per_beta_increment}\t{dropout_p}\t{best_score:.4f}")
 
-    plt.figure(figsize=(7,5))
-    plt.plot(train_f1_scores, label='train')
-    plt.plot(val_f1_scores, label='val')
-    plt.legend()
-    plt.xlabel('Epoches')
-    plt.ylabel('F1 Score')
-    plt.title('Train and Validation F1 Scores')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig('train_vs_val_f1_score.png')
+    # plt.figure(figsize=(7,5))
+    # plt.plot(train_f1_scores, label='train')
+    # plt.plot(val_f1_scores, label='val')
+    # plt.legend()
+    # plt.xlabel('Epoches')
+    # plt.ylabel('F1 Score')
+    # plt.title('Train and Validation F1 Scores')
+    # plt.legend()
+    # plt.grid(True)
+    # plt.savefig('train_vs_val_f1_score.png')
 
 
-    plt.figure(figsize=(7,5))
-    plt.plot(train_rewards, label='train')
-    plt.plot(val_rewards, label='val')
-    plt.legend()
-    plt.xlabel('Epoches')
-    plt.ylabel('Reward')
-    plt.title('Train and Validation Reward')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig('train_vs_val_reward.png')
+    # plt.figure(figsize=(7,5))
+    # plt.plot(train_rewards, label='train')
+    # plt.plot(val_rewards, label='val')
+    # plt.legend()
+    # plt.xlabel('Epoches')
+    # plt.ylabel('Reward')
+    # plt.title('Train and Validation Reward')
+    # plt.legend()
+    # plt.grid(True)
+    # plt.savefig('train_vs_val_reward.png')
 
-    plt.figure(figsize=(7,5))
-    plt.plot(train_recalls, label='train')
-    plt.plot(val_recalls, label='val')
-    plt.legend()
-    plt.xlabel('Epoches')
-    plt.ylabel('Recall')
-    plt.title('Train and Validation Recall')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig('train_vs_val_recall.png')
+    # plt.figure(figsize=(7,5))
+    # plt.plot(train_recalls, label='train')
+    # plt.plot(val_recalls, label='val')
+    # plt.legend()
+    # plt.xlabel('Epoches')
+    # plt.ylabel('Recall')
+    # plt.title('Train and Validation Recall')
+    # plt.legend()
+    # plt.grid(True)
+    # plt.savefig('train_vs_val_recall.png')
 
     df = pd.DataFrame(history).set_index('epoch')
 

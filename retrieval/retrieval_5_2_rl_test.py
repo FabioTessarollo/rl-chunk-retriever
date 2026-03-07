@@ -26,14 +26,8 @@ def compute_stream_feature_importance(online_net, data, query_ids, device, max_e
 
     metadata_feature_names = [
         "Rank Position",
-        "Prev Chunk Taken",
-        "Curr Chunk Taken",
-        "Next Chunk Taken",
         "Bag of Chunks Size",
-        "Curr and Query Sim",
-        "Next and Query Sim",
-        "Bag and Query Sim",
-        "Prev and Query Sim"
+        "Query - Current Chunk Sim", "Query - Current Chunk and Next Sim", "Query - Bag Sim", "Query - Current Chunk and Prev Sim"
     ]
     emb_group_names = ["Emb - Current", "Emb - Current & Next", "Emb - Current & Prev", "Emb - Query", "Emb - Bag"]
 
@@ -59,8 +53,9 @@ def compute_stream_feature_importance(online_net, data, query_ids, device, max_e
         state_emb = state_emb.to(device)
         state_meta = state_meta.to(device)
         done = False
+        truncated = False
 
-        while not done:
+        while not done and not truncated:
             state_emb_var = state_emb.clone().detach().unsqueeze(0).requires_grad_(True)
             state_meta_var = state_meta.clone().detach().unsqueeze(0).requires_grad_(True)
 
@@ -97,18 +92,21 @@ def compute_stream_feature_importance(online_net, data, query_ids, device, max_e
             total_states += 1
 
             action = q_vals.argmax().item()
-            if topic.current_loop + 1 > max_exp_loops:
-                next_emb, next_meta, reward, done = topic.submit_current_bag()
-            elif action == 0:
-                next_emb, next_meta, reward, done = topic.skip()
+            if action == 0:
+                next_emb, next_meta, reward, done, truncated = topic.skip()
+                #s += 1
             elif action == 1:
-                next_emb, next_meta, reward, done = topic.take_single()
+                next_emb, next_meta, reward, done, truncated= topic.take_single()
+                #a1 += 1
             elif action == 2:
-                next_emb, next_meta, reward, done = topic.take_double()
+                next_emb, next_meta, reward, done, truncated = topic.take_double()
+                #a2f += 1
             elif action == 3:
-                next_emb, next_meta, reward, done = topic.take_prev_double()
-            else:
-                next_emb, next_meta, reward, done = topic.submit_current_bag()
+                next_emb, next_meta, reward, done, truncated = topic.take_prev_double()
+                #a2b += 1
+            elif action == 4:
+                next_emb, next_meta, reward, done, truncated = topic.take_triple()
+                #a3 += 1
 
             state_emb = next_emb.to(device)
             state_meta = next_meta.to(device)
@@ -154,12 +152,20 @@ def compute_stream_feature_importance(online_net, data, query_ids, device, max_e
     plt.savefig("value_vs_advantage_importance.png")
     plt.close()
 
+
 def evaluate(data, query_ids, online_net, device, max_exp_loops):
     """Evaluate the model on validation set without training"""
     val_reward = 0
     val_f1_score = 0
+    val_recall = 0
+    val_precision = 0
     results = []
-    
+    a2f = 0
+    a2b = 0
+    a3 = 0
+    a1 = 0
+    s = 0
+
     for query_id in query_ids:
         query = data.get_query_obj_from_id(query_id)
         page_id = query.get("page_id")
@@ -169,50 +175,56 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
         ranked_chunks = data.cosine_sim_rank[str(query_id)]
         query_desc = query.get("query_desc")
 
-        topic = Topic(query_emb, page, ranked_chunks, relevant_chunks, max_exp_loops)
-
         logging.info(f"Query: {query_desc}")
+
+        topic = Topic(query_emb, page, ranked_chunks, relevant_chunks, max_exp_loops)
 
         state_emb, state_meta, _, _ = topic.get_initial_step()
         state_emb = state_emb.to(device)
         state_meta = state_meta.to(device)
         episode_reward = 0
         done = False
+        truncated = False
         episode_steps = 0
-        
+
         # Greedy evaluation (no exploration)
-        while not done:
+        while not done and not truncated:
             episode_steps += 1
 
-            log_state = f"Step: {episode_steps}, Chunk: {topic.current_chunk_id}"
-            
             with torch.no_grad():
                 q = online_net(state_emb.unsqueeze(0), state_meta.unsqueeze(0))
                 action = q.argmax().item()
-            
-                if topic.current_loop + 1 > max_exp_loops:
-                    next_emb, next_meta, reward, done = topic.submit_current_bag()
-                elif action == 0:
-                    next_emb, next_meta, reward, done = topic.skip()
+
+                action_log = f"Chunk: {topic.current_chunk_id}"
+
+                if action == 0:
+                    next_emb, next_meta, reward, done, truncated = topic.skip()
+                    #s += 1
                 elif action == 1:
-                    next_emb, next_meta, reward, done = topic.take_single()
+                    next_emb, next_meta, reward, done, truncated= topic.take_single()
+                    #a1 += 1
                 elif action == 2:
-                    next_emb, next_meta, reward, done = topic.take_double()
+                    next_emb, next_meta, reward, done, truncated = topic.take_double()
+                    #a2f += 1
                 elif action == 3:
-                    next_emb, next_meta, reward, done = topic.take_prev_double()
+                    next_emb, next_meta, reward, done, truncated = topic.take_prev_double()
+                    #a2b += 1
                 elif action == 4:
-                    next_emb, next_meta, reward, done = topic.submit_current_bag()
-                
+                    next_emb, next_meta, reward, done, truncated = topic.take_triple()
+                    #a3 += 1
+
+                logging.info(f"{action_log}, Action Code: {action}, Reward: {reward:.4f}")
+
             next_emb = next_emb.to(device)
             next_meta = next_meta.to(device)
             episode_reward += reward
-            
+
             state_emb, state_meta = next_emb, next_meta
 
-            logging.info(f"{log_state}, Reward: {reward:.4f}, Action: {action}")
-            
         val_reward += episode_reward
         val_f1_score += topic.f1_score
+        val_recall += topic.recall
+        val_precision += topic.precision
 
         results.append({
             "query" : query_desc,
@@ -225,12 +237,15 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
     
     avg_val_reward = val_reward / len(query_ids)
     avg_val_f1_score = val_f1_score / len(query_ids)
-    
-    return avg_val_reward, avg_val_f1_score, results
+    avg_val_recall = val_recall / len(query_ids)
+    avg_val_precision = val_precision / len(query_ids)
+
+    return avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision, results
+
 
 def test():
 
-    logging.basicConfig(filename='rl_testing.log', level=logging.INFO, format='%(asctime)s - %(message)s', filemode="w")
+    # logging.basicConfig(filename='rl_testing.log', level=logging.INFO, format='%(asctime)s - %(message)s', filemode="w")
 
     pages_path_test = f"data_3_embed/pages_chunked_emb_test.json"
     relevant_path_test = f"data_3_embed/relevant_chunks_emb_test.json"
@@ -245,23 +260,34 @@ def test():
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    model = DuelingDQN(metadata_dim = 9, action_dim = 5, proj_dim = 512, dropout_p = 0).to(device)
-    model.load_state_dict(torch.load("models/rl-chunk-retriever.pt", map_location="cpu")) #rl-chunk-retriever copy
+    model = DuelingDQN(metadata_dim = 6, action_dim = 5, proj_dim = 512, dropout_p = 0).to(device)
+    model.load_state_dict(torch.load("models/rl-chunk-retriever_BEEEEEST.pt", map_location="cpu")) #rl-chunk-retriever copy
     model.eval()
 
-    avg_val_reward, avg_val_f1_score, results = evaluate(
-        data_test, data_test.query_ids, model, device, 
-        max_exp_loops = 1
-    )
-    logging.info(f"GREEDY: TEST Reward: {avg_val_reward:.4f}, TEST F1: {avg_val_f1_score:.4f}")
-    print(f"GREEDY: TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
+    # avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision, results = evaluate(
+    #     data_test, data_test.query_ids, model, device, 
+    #     max_exp_loops = 1
+    # )
+    # logging.info(f"GREEDY: TEST Reward: {avg_val_reward:.4f}, TEST F1: {avg_val_f1_score:.4f}")
+    # print(f"GREEDY: TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
 
-    output_dir = "data_5_analysis"
-    os.makedirs(output_dir, exist_ok=True)
+    # output_dir = "data_5_analysis"
+    # os.makedirs(output_dir, exist_ok=True)
 
-    output_file = os.path.join(output_dir, "rl_model_retrieved_test_single.json")
-    with open(output_file, 'w') as f:
-        json.dump(results, f, indent=2)
+    # output_file = os.path.join(output_dir, "rl_model_retrieved_test_single.json")
+    # with open(output_file, 'w') as f:
+    #     json.dump(results, f, indent=2)
+
+        #############
+
+    # pages_path = "data_3_embed/pages_chunked_emb_train.json"
+    # relevant_path = "data_3_embed/relevant_chunks_emb_train.json"
+    # cosine_sim_path = "data_4_cos_sim/cosine_sim_rank_threshold_only_single_train.json" #_train
+
+    # data_train = Data(pages_path, relevant_path, cosine_sim_path)
+    # data_train.load_pages()
+    # data_train.load_relevant()
+    # data_train.load_cosine_sim()
 
     compute_stream_feature_importance(
         model, data_test, data_test.query_ids, device, max_exp_loops = 1, n_samples=200 #  + validation_set
