@@ -59,25 +59,40 @@ def compute_stream_feature_importance(online_net, data, query_ids, device, max_e
             state_emb_var = state_emb.clone().detach().unsqueeze(0).requires_grad_(True)
             state_meta_var = state_meta.clone().detach().unsqueeze(0).requires_grad_(True)
 
+            # Fresh forward pass
             q_vals, v_stream, a_stream = online_net(
                 state_emb_var, state_meta_var, return_streams=True
             )
 
-            v_scalar = v_stream.sum()
-            a_scalar = a_stream.abs().sum()
+            action = q_vals.argmax().item()
+
+            # --- Value stream saliency ---
+            v_scalar = v_stream.sum()  # V is already scalar-like
 
             online_net.zero_grad()
+            if state_emb_var.grad is not None:
+                state_emb_var.grad.zero_()
+            if state_meta_var.grad is not None:
+                state_meta_var.grad.zero_()
+
             v_scalar.backward(retain_graph=True)
+
             emb_grad_v = state_emb_var.grad.detach().squeeze(0).abs().cpu()
             meta_grad_v = state_meta_var.grad.detach().squeeze(0).abs().cpu()
 
+            # --- Advantage stream saliency (selected action only) ---
+            a_scalar = a_stream[0, action]  # backprop through chosen action's advantage
+
+            online_net.zero_grad()
             state_emb_var.grad.zero_()
             state_meta_var.grad.zero_()
 
             a_scalar.backward()
+
             emb_grad_a = state_emb_var.grad.detach().squeeze(0).abs().cpu()
             meta_grad_a = state_meta_var.grad.detach().squeeze(0).abs().cpu()
 
+            # --- Accumulate ---
             if emb_sum_v is None:
                 emb_sum_v = emb_grad_v.clone()
                 emb_sum_a = emb_grad_a.clone()
@@ -91,22 +106,17 @@ def compute_stream_feature_importance(online_net, data, query_ids, device, max_e
 
             total_states += 1
 
-            action = q_vals.argmax().item()
+            # --- Step environment ---
             if action == 0:
                 next_emb, next_meta, reward, done, truncated = topic.skip()
-                #s += 1
             elif action == 1:
-                next_emb, next_meta, reward, done, truncated= topic.take_single()
-                #a1 += 1
+                next_emb, next_meta, reward, done, truncated = topic.take_single()
             elif action == 2:
                 next_emb, next_meta, reward, done, truncated = topic.take_double()
-                #a2f += 1
             elif action == 3:
                 next_emb, next_meta, reward, done, truncated = topic.take_prev_double()
-                #a2b += 1
             elif action == 4:
                 next_emb, next_meta, reward, done, truncated = topic.take_triple()
-                #a3 += 1
 
             state_emb = next_emb.to(device)
             state_meta = next_meta.to(device)
@@ -121,8 +131,13 @@ def compute_stream_feature_importance(online_net, data, query_ids, device, max_e
 
     emb_len = emb_mean_v.numel()
     groups = len(emb_group_names)
-    group_size = emb_len // groups
 
+    assert emb_len % groups == 0, (
+        f"Embedding length {emb_len} is not divisible by number of groups {groups}. "
+        f"Check emb_group_names or embedding shape."
+    )
+
+    group_size = emb_len // groups
     emb_mean_v_groups = emb_mean_v.view(groups, group_size).mean(dim=1).numpy()
     emb_mean_a_groups = emb_mean_a.view(groups, group_size).mean(dim=1).numpy()
 
@@ -149,7 +164,7 @@ def compute_stream_feature_importance(online_net, data, query_ids, device, max_e
     plt.legend()
     plt.tight_layout()
     plt.grid(True)
-    plt.savefig("value_vs_advantage_importance.png")
+    plt.savefig("feature_importance/value_vs_advantage_importance.png")
     plt.close()
 
 
@@ -247,14 +262,14 @@ def test():
 
     # logging.basicConfig(filename='rl_testing.log', level=logging.INFO, format='%(asctime)s - %(message)s', filemode="w")
 
-    pages_path_test = f"data_3_embed/pages_chunked_emb_test.json"
-    relevant_path_test = f"data_3_embed/relevant_chunks_emb_test.json"
-    cosine_sim_path_test = "data_4_cos_sim/cosine_sim_rank_threshold_only_single_test.json"
+    # pages_path_test = f"data_3_embed/pages_chunked_emb_test.json"
+    # relevant_path_test = f"data_3_embed/relevant_chunks_emb_test.json"
+    # cosine_sim_path_test = "data_4_cos_sim/cosine_sim_rank_threshold_only_single_test.json"
 
-    data_test = Data(pages_path_test, relevant_path_test, cosine_sim_path_test)
-    data_test.load_pages()
-    data_test.load_relevant()
-    data_test.load_cosine_sim()
+    # data_test = Data(pages_path_test, relevant_path_test, cosine_sim_path_test)
+    # data_test.load_pages()
+    # data_test.load_relevant()
+    # data_test.load_cosine_sim()
 
     # Set device
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -280,16 +295,16 @@ def test():
 
         #############
 
-    # pages_path = "data_3_embed/pages_chunked_emb_train.json"
-    # relevant_path = "data_3_embed/relevant_chunks_emb_train.json"
-    # cosine_sim_path = "data_4_cos_sim/cosine_sim_rank_threshold_only_single_train.json" #_train
+    pages_path = "data_3_embed/pages_chunked_emb_train.json"
+    relevant_path = "data_3_embed/relevant_chunks_emb_train.json"
+    cosine_sim_path = "data_4_cos_sim/cosine_sim_rank_threshold_only_single_train.json" #_train
 
-    # data_train = Data(pages_path, relevant_path, cosine_sim_path)
-    # data_train.load_pages()
-    # data_train.load_relevant()
-    # data_train.load_cosine_sim()
+    data_train = Data(pages_path, relevant_path, cosine_sim_path)
+    data_train.load_pages()
+    data_train.load_relevant()
+    data_train.load_cosine_sim()
 
     compute_stream_feature_importance(
-        model, data_test, data_test.query_ids, device, max_exp_loops = 1, n_samples=200 #  + validation_set
+        model, data_train, data_train.query_ids, device, max_exp_loops = 1, n_samples=200 #  + validation_set
     )
 

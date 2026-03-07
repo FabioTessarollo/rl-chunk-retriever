@@ -27,9 +27,9 @@ def main():
     # embed('test')
 
     # Evaluate RL model on test data using trained model
-    test()
+    #test()
 
-    # analyze()
+    analyze()
 
 
 

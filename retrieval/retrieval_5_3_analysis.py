@@ -316,7 +316,7 @@ def analyze():
     print(f"Average Cosine Similarity F1 Score: {metrics['avg_cos_sim_f1_score']:.6f}")
     print(f"{'='*50}")
 
-    completeness_threshold = 1 # 0.8 means chunks with more than 80% relevant are removed
+    completeness_threshold = 0 # 0.8 means chunks with more than 80% relevant are removed
 
     filtered_results = process_all_queries(final_data, completeness_threshold, topk = 100)
 
