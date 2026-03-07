@@ -23,7 +23,7 @@ random.seed(1)
 torch.manual_seed(1)
 
 
-def evaluate(data, query_ids, online_net, device, max_exp_loops):
+def evaluate(data, query_ids, online_net, device, max_exp_loops, history, epoch):
     """Evaluate the model on validation set without training"""
     val_reward = 0
     val_f1_score = 0
@@ -34,6 +34,8 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
     a3 = 0
     a1 = 0
     s = 0
+
+    epoch_counts = {'skip': 0, 'take_1': 0, 'take_2n': 0, 'take_2p': 0, 'take_3': 0}
 
     for query_id in query_ids:
         query = data.get_query_obj_from_id(query_id)
@@ -68,19 +70,19 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
 
                 if action == 0:
                     next_emb, next_meta, reward, done, truncated = topic.skip()
-                    #s += 1
+                    epoch_counts['skip'] += 1
                 elif action == 1:
                     next_emb, next_meta, reward, done, truncated= topic.take_single()
-                    #a1 += 1
+                    epoch_counts['take_1'] += 1
                 elif action == 2:
                     next_emb, next_meta, reward, done, truncated = topic.take_double()
-                    #a2f += 1
+                    epoch_counts['take_2n'] += 1
                 elif action == 3:
                     next_emb, next_meta, reward, done, truncated = topic.take_prev_double()
-                    #a2b += 1
+                    epoch_counts['take_2p'] += 1
                 elif action == 4:
                     next_emb, next_meta, reward, done, truncated = topic.take_triple()
-                    #a3 += 1
+                    epoch_counts['take_3'] += 1
 
                 logging.info(f"{action_log}, Action Code: {action}, Reward: {reward:.4f}")
 
@@ -101,10 +103,12 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
     avg_val_f1_score = val_f1_score / len(query_ids)
     avg_val_recall = val_recall / len(query_ids)
     avg_val_precision = val_precision / len(query_ids)
+    epoch_counts['epoch'] = epoch
+    history.append(epoch_counts)
 
     #print(s, a1, a2f, a2b, a3)
 
-    return avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision
+    return avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision, history
 
 def train():
 
@@ -142,6 +146,7 @@ def train():
     eta_min = 3e-6
     warm_up_epoches = 20
     neg_schedule = torch.linspace(0.30, 0.50, steps=50)
+    history = []
 
 
     es = EarlyStopping(patience=10, delta_ratio=0.001) #12? #15? #10?
@@ -177,12 +182,10 @@ def train():
     val_rewards = []
     train_recalls = []
     val_recalls = []
-    history = []
     for epoch in range(epochs):
         online_net.train()
         epoch_reward = 0
         epoch_f1_score = 0
-        epoch_counts = {'skip': 0, 'take_1': 0, 'take_2n': 0, 'take_2p': 0, 'take_3': 0}
         random.shuffle(train_set)
 
         # Log current learning rate
@@ -237,20 +240,14 @@ def train():
 
                 if action == 0:
                     next_emb, next_meta, reward, done, truncated = topic.skip()
-                    epoch_counts['skip'] += 1
                 elif action == 1:
                     next_emb, next_meta, reward, done, truncated= topic.take_single()
-                    epoch_counts['take_1'] += 1
                 elif action == 2:
                     next_emb, next_meta, reward, done, truncated = topic.take_double()
-                    epoch_counts['take_2n'] += 1
                 elif action == 3:
                     next_emb, next_meta, reward, done, truncated = topic.take_prev_double()
-                    epoch_counts['take_2p'] += 1
                 elif action == 4:
                     next_emb, next_meta, reward, done, truncated = topic.take_triple()
-                    epoch_counts['take_3'] += 1
-
                 #logging.info(f"{action_log}, Action Code: {action}, Reward: {reward:.4f}, Rand: {int(rand)}")
 
                 next_emb = next_emb.to(device)
@@ -321,25 +318,23 @@ def train():
 
         scheduler.step()
 
-        epoch_counts['epoch'] = epoch
-        history.append(epoch_counts)
 
         online_net.eval()
 
-        avg_train_reward, avg_train_f1_score, recall_train, precision_train = evaluate(
-            data, train_set, online_net, device,
-            max_exp_loops
-        )
-        logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
-        print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}, Recall {recall_train:.4f}, Precision {precision_train:.4f}")
-        train_f1_scores.append(avg_train_f1_score)
-        train_rewards.append(avg_train_reward)
-        train_recalls.append(recall_train)
+        # avg_train_reward, avg_train_f1_score, recall_train, precision_train, history = evaluate(
+        #     data, train_set, online_net, device,
+        #     max_exp_loops, history, epoch
+        # )
+        # logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
+        # print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}, Recall {recall_train:.4f}, Precision {precision_train:.4f}")
+        # train_f1_scores.append(avg_train_f1_score)
+        # train_rewards.append(avg_train_reward)
+        # train_recalls.append(recall_train)
 
 
-        avg_val_reward, avg_val_f1_score, recall_val, precision_val = evaluate(
+        avg_val_reward, avg_val_f1_score, recall_val, precision_val, history = evaluate(
             data, validation_set, online_net, device,
-            max_exp_loops
+            max_exp_loops, history, epoch
         )
         logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
         print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall_val:.4f}, Precision {precision_val:.4f}")
@@ -388,11 +383,11 @@ def train():
     plt.figure(figsize=(7, 5))
 
     # Plot each series manually to control colors exactly
-    plt.plot(df['skip'], label='Skip', color='grey', linewidth=2)
-    plt.plot(df['take_1'], label='Take 1', color='#C2EABD', linewidth=2)    # Light Green
-    plt.plot(df['take_2p'], label='Take 2f', color='#74C476', linewidth=2)  # Mid Green
-    plt.plot(df['take_2n'], label='Take 2b', color='#74C476', linewidth=2)  # Mid Green
-    plt.plot(df['take_3'], label='Take 3', color='#00441B', linewidth=2)    # Dark Green
+    plt.plot(df['skip'], label='Skip', color='#7A8582', linewidth=2)
+    plt.plot(df['take_1'], label='Take 1', color='#95bf74', linewidth=2)    # Light Green
+    plt.plot(df['take_2p'], label='Take 2f', color='#659b5e', linewidth=2)  # Mid Green
+    plt.plot(df['take_2n'], label='Take 2b', color='#556f44', linewidth=2)  # Mid Green
+    plt.plot(df['take_3'], label='Take 3', color='#283f3b', linewidth=2)    # Dark Green
 
     plt.legend()
     plt.xlabel('Epochs')

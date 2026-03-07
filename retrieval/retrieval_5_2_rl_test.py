@@ -16,8 +16,8 @@ from retrieval.DuelingDQN import DuelingDQN
 
 
 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-random.seed(1)
-torch.manual_seed(1)
+random.seed(39)
+torch.manual_seed(39)
 
 
 def compute_stream_feature_importance(online_net, data, query_ids, device, max_exp_loops, n_samples=1000):
@@ -145,7 +145,7 @@ def compute_stream_feature_importance(online_net, data, query_ids, device, max_e
     value_scores = np.concatenate([meta_mean_v, emb_mean_v_groups])
     adv_scores = np.concatenate([meta_mean_a, emb_mean_a_groups])
 
-    sort_idx = np.argsort(adv_scores)
+    sort_idx = np.argsort(value_scores)
     labels = [labels[i] for i in sort_idx]
     value_scores = value_scores[sort_idx]
     adv_scores = adv_scores[sort_idx]
@@ -164,7 +164,7 @@ def compute_stream_feature_importance(online_net, data, query_ids, device, max_e
     plt.legend()
     plt.tight_layout()
     plt.grid(True)
-    plt.savefig("feature_importance/value_vs_advantage_importance.png")
+    plt.savefig("value_vs_advantage_importance.png")
     plt.close()
 
 
@@ -305,6 +305,6 @@ def test():
     data_train.load_cosine_sim()
 
     compute_stream_feature_importance(
-        model, data_train, data_train.query_ids, device, max_exp_loops = 1, n_samples=200 #  + validation_set
+        model, data_train, data_train.query_ids, device, max_exp_loops = 1, n_samples=100 #  + validation_set
     )
 

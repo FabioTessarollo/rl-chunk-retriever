@@ -132,6 +132,8 @@ def process_all_queries(final_data, completeness_threshold, topk, return_avg_sco
     cos_sim_recall_scores = []
     cos_sim_precision_scores = []
     cos_sim_fpr_scores = []
+    rl_cm = {'TP': 0, 'FP': 0, 'FN': 0, 'TN': 0}
+    cs_cm = {'TP': 0, 'FP': 0, 'FN': 0, 'TN': 0}
 
 
     for item in final_data:
@@ -181,6 +183,24 @@ def process_all_queries(final_data, completeness_threshold, topk, return_avg_sco
                 
         rl_f1, rl_recall, rl_precision, rl_fpr = f1_score(rl_model_retrieved_filtered, relevant_chunks_filtered, item['total_chunks_count'])
         cos_sim_f1, cos_sim_recall, cos_sim_precision, cos_sim_fpr = f1_score(cos_sim_retrieved_chunks_filtered, relevant_chunks_filtered, item['total_chunks_count'])
+
+        rl_tp = len(set(rl_model_retrieved_filtered) & set(relevant_chunks_filtered))
+        rl_fp = len(set(rl_model_retrieved_filtered) - set(relevant_chunks_filtered))
+        rl_fn = len(set(relevant_chunks_filtered) - set(rl_model_retrieved_filtered))
+        rl_tn = item['total_chunks_count'] - (rl_tp + rl_fp + rl_fn)
+        rl_cm['TP'] += rl_tp
+        rl_cm['FP'] += rl_fp
+        rl_cm['FN'] += rl_fn
+        rl_cm['TN'] += rl_tn
+
+        cs_tp = len(set(cos_sim_retrieved_chunks_filtered) & set(relevant_chunks_filtered))
+        cs_fp = len(set(cos_sim_retrieved_chunks_filtered) - set(relevant_chunks_filtered))
+        cs_fn = len(set(relevant_chunks_filtered) - set(cos_sim_retrieved_chunks_filtered))
+        cs_tn = item['total_chunks_count'] - (cs_tp + cs_fp + cs_fn)
+        cs_cm['TP'] += cs_tp
+        cs_cm['FP'] += cs_fp
+        cs_cm['FN'] += cs_fn
+        cs_cm['TN'] += cs_tn
         
         rl_scores.append(rl_f1)
         rl_recall_scores.append(rl_recall)
@@ -245,6 +265,14 @@ def process_all_queries(final_data, completeness_threshold, topk, return_avg_sco
     variation = ((rl_f1_avg - cs_f1_avg) / cs_f1_avg) * 100
     print(f"\nF1 Score Variation: {(rl_f1_avg - cs_f1_avg):.4f}, {variation:.4f}%")
 
+    print(f"\n--- RL Model Confusion Matrix (Aggregated) ---")
+    print(f"  TP: {rl_cm['TP']:>6}    FP: {rl_cm['FP']:>6}")
+    print(f"  FN: {rl_cm['FN']:>6}    TN: {rl_cm['TN']:>6}")
+
+    print(f"\n--- Cos-Sim Confusion Matrix (Aggregated) ---")
+    print(f"  TP: {cs_cm['TP']:>6}    FP: {cs_cm['FP']:>6}")
+    print(f"  FN: {cs_cm['FN']:>6}    TN: {cs_cm['TN']:>6}")
+
     return filtered_results
 
 def plot_relevance_coverage(thresholds, final_data):
@@ -281,7 +309,7 @@ def plot_relevance_coverage(thresholds, final_data):
             color="tomato", linewidth=1.5, linestyle=":", alpha=0.8,
             label=f"CS trend (slope={cs_fit.c[0]:+.3f})")
 
-    ax.set_xlabel("Completeness Threshold", fontsize=12)
+    ax.set_xlabel("Relevance Coverage", fontsize=12)
     ax.set_ylabel("Recall", fontsize=12)
     ax.set_title("Recall: RL vs Cosine Similarity over Relevance Coverage C")
     ax.set_xticks(thresholds_arr)
@@ -316,7 +344,7 @@ def analyze():
     print(f"Average Cosine Similarity F1 Score: {metrics['avg_cos_sim_f1_score']:.6f}")
     print(f"{'='*50}")
 
-    completeness_threshold = 0 # 0.8 means chunks with more than 80% relevant are removed
+    completeness_threshold = 1.1 # 0.8 means chunks with more than 80% relevant are removed
 
     filtered_results = process_all_queries(final_data, completeness_threshold, topk = 100)
 
