@@ -106,7 +106,7 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
 
     return avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision
 
-def train():
+def trainf():
 
     pages_path = "data_3_embed/pages_chunked_emb_train.json"
     relevant_path = "data_3_embed/relevant_chunks_emb_train.json"
@@ -126,7 +126,7 @@ def train():
     data_test.load_relevant()
     data_test.load_cosine_sim()
 
-    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 0.66)
+    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 1)
 
     best_score = 0
     metadata_dim = 6
@@ -140,7 +140,7 @@ def train():
     replay_capacity = 30000
     lr = 3e-5
     target_update = 4000 ############### PROVARE A DIMINUIRE
-    epochs = 40# 31 #24
+    epochs = 30# 31 #24
     max_exp_loops = 1
     action_dim = 5
     dropout_p = 0
@@ -246,19 +246,19 @@ def train():
 
                 if action == 0:
                     next_emb, next_meta, reward, done, truncated = topic.skip()
-                    epoch_counts['skip'] += 1
+                    #epoch_counts['skip'] += 1
                 elif action == 1:
                     next_emb, next_meta, reward, done, truncated= topic.take_single()
-                    epoch_counts['take_1'] += 1
+                    #epoch_counts['skip'] += 1
                 elif action == 2:
                     next_emb, next_meta, reward, done, truncated = topic.take_double()
-                    epoch_counts['take_2n'] += 1
+                    #epoch_counts['take_2n'] += 1
                 elif action == 3:
                     next_emb, next_meta, reward, done, truncated = topic.take_prev_double()
-                    epoch_counts['take_2p'] += 1
+                    #epoch_counts['take_2p'] += 1
                 elif action == 4:
                     next_emb, next_meta, reward, done, truncated = topic.take_triple()
-                    epoch_counts['take_3'] += 1
+                    #epoch_counts['take_3'] += 1
 
                 #logging.info(f"{action_log}, Action Code: {action}, Reward: {reward:.4f}, Rand: {int(rand)}")
 
@@ -336,96 +336,101 @@ def train():
 
         # Greedy evaluation
         # if epoch > 40:
-        online_net.eval()
+        # online_net.eval()
 
-        avg_train_reward, avg_train_f1_score, recall_train, precision_train = evaluate(
-            data, train_set, online_net, device,
-            max_exp_loops
-        )
-        logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
-        print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}, Recall {recall_train:.4f}, Precision {precision_train:.4f}")
-        train_f1_scores.append(avg_train_f1_score)
-        train_rewards.append(avg_train_reward)
-        train_recalls.append(recall_train)
-
-
-        avg_val_reward, avg_val_f1_score, recall_val, precision_val = evaluate(
-            data, validation_set, online_net, device,
-            max_exp_loops
-        )
-        logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
-        print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall_val:.4f}, Precision {precision_val:.4f}")
-        val_f1_scores.append(avg_val_f1_score)
-        val_rewards.append(avg_val_reward)
-        val_recalls.append(recall_val)
+        # avg_train_reward, avg_train_f1_score, recall_train, precision_train = evaluate(
+        #     data, train_set, online_net, device,
+        #     max_exp_loops
+        # )
+        # logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
+        # print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}, Recall {recall_train:.4f}, Precision {precision_train:.4f}")
+        # train_f1_scores.append(avg_train_f1_score)
+        # train_rewards.append(avg_train_reward)
+        # train_recalls.append(recall_train)
 
 
-        # if epoch > 10:
-        #     online_net.eval()
-        #     avg_val_reward, avg_val_f1_score, recall, precision = evaluate(
-        #         data_test, data_test.query_ids, online_net, device,
-        #         max_exp_loops
-        #     )
-        #     print(f"TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall:.4f}, Precision {precision:.4f}")
+        # avg_val_reward, avg_val_f1_score, recall_val, precision_val = evaluate(
+        #     data, validation_set, online_net, device,
+        #     max_exp_loops
+        # )
+        # logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
+        # print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall_val:.4f}, Precision {precision_val:.4f}")
+        # val_f1_scores.append(avg_val_f1_score)
+        # val_rewards.append(avg_val_reward)
+        # val_recalls.append(recall_val)
+
+
+        if epoch > 17:
+            online_net.eval()
+            avg_val_reward, avg_val_f1_score, recall, precision = evaluate(
+                data_test, data_test.query_ids, online_net, device,
+                max_exp_loops
+            )
+            print(f"TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall:.4f}, Precision {precision:.4f}")
+    
+            trained_model_path = f"models/rl-chunk-retriever_final_please_{epoch}.pt"
+            torch.save(online_net.state_dict(), trained_model_path)
+
+    # trained_model_path = "models/rl-chunk-retriever_final.pt"
+    # torch.save(online_net.state_dict(), trained_model_path)
 
             # if es.step(avg_val_f1_score):
             #     print(f"Early stopping at epoch {epoch}")
             #     break
 
-    extra_logger.info(f"{now_str}\t{proj_dim}\t{gamma}\t{epsilon_min}\t{epsilon_decay}\t{batch_size}\t{replay_capacity}\t{lr}\t{target_update}\t{epochs}\t{max_exp_loops}\t{action_dim}\t{scheduler_type}\t{per_alpha}\t{per_beta}\t{per_beta_increment}\t{dropout_p}\t{best_score:.4f}")
+    # extra_logger.info(f"{now_str}\t{proj_dim}\t{gamma}\t{epsilon_min}\t{epsilon_decay}\t{batch_size}\t{replay_capacity}\t{lr}\t{target_update}\t{epochs}\t{max_exp_loops}\t{action_dim}\t{scheduler_type}\t{per_alpha}\t{per_beta}\t{per_beta_increment}\t{dropout_p}\t{best_score:.4f}")
 
-    plt.figure(figsize=(7,5))
-    plt.plot(train_f1_scores, label='train')
-    plt.plot(val_f1_scores, label='val')
-    plt.legend()
-    plt.xlabel('Epoches')
-    plt.ylabel('F1 Score')
-    plt.title('Train and Validation F1 Scores')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig('train_vs_val_f1_score.png')
+    # plt.figure(figsize=(7,5))
+    # plt.plot(train_f1_scores, label='train')
+    # plt.plot(val_f1_scores, label='val')
+    # plt.legend()
+    # plt.xlabel('Epoches')
+    # plt.ylabel('F1 Score')
+    # plt.title('Train and Validation F1 Scores')
+    # plt.legend()
+    # plt.grid(True)
+    # plt.savefig('train_vs_val_f1_score.png')
 
 
-    plt.figure(figsize=(7,5))
-    plt.plot(train_rewards, label='train')
-    plt.plot(val_rewards, label='val')
-    plt.legend()
-    plt.xlabel('Epoches')
-    plt.ylabel('Reward')
-    plt.title('Train and Validation Reward')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig('train_vs_val_reward.png')
+    # plt.figure(figsize=(7,5))
+    # plt.plot(train_rewards, label='train')
+    # plt.plot(val_rewards, label='val')
+    # plt.legend()
+    # plt.xlabel('Epoches')
+    # plt.ylabel('Reward')
+    # plt.title('Train and Validation Reward')
+    # plt.legend()
+    # plt.grid(True)
+    # plt.savefig('train_vs_val_reward.png')
 
-    plt.figure(figsize=(7,5))
-    plt.plot(train_recalls, label='train')
-    plt.plot(val_recalls, label='val')
-    plt.legend()
-    plt.xlabel('Epoches')
-    plt.ylabel('Recall')
-    plt.title('Train and Validation Recall')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig('train_vs_val_recall.png')
+    # plt.figure(figsize=(7,5))
+    # plt.plot(train_recalls, label='train')
+    # plt.plot(val_recalls, label='val')
+    # plt.legend()
+    # plt.xlabel('Epoches')
+    # plt.ylabel('Recall')
+    # plt.title('Train and Validation Recall')
+    # plt.legend()
+    # plt.grid(True)
+    # plt.savefig('train_vs_val_recall.png')
 
-    df = pd.DataFrame(history).set_index('epoch')
+    # df = pd.DataFrame(history).set_index('epoch')
 
-    plt.figure(figsize=(7, 5))
+    # plt.figure(figsize=(7, 5))
 
-    # Plot each series manually to control colors exactly
-    plt.plot(df['skip'], label='Skip', color='grey', linewidth=2)
-    plt.plot(df['take_1'], label='Take 1', color='#C2EABD', linewidth=2)    # Light Green
-    plt.plot(df['take_2p'], label='Take 2f', color='#74C476', linewidth=2)  # Mid Green
-    plt.plot(df['take_2n'], label='Take 2b', color='#74C476', linewidth=2)  # Mid Green
-    plt.plot(df['take_3'], label='Take 3', color='#00441B', linewidth=2)    # Dark Green
+    # # Plot each series manually to control colors exactly
+    # plt.plot(df['skip'], label='Skip', color='grey', linewidth=2)
+    # plt.plot(df['take_1'], label='Take 1', color='#C2EABD', linewidth=2)    # Light Green
+    # plt.plot(df['take_2f'], label='Take 2f', color='#74C476', linewidth=2)  # Mid Green
+    # plt.plot(df['take_2b'], label='Take 2b', color='#74C476', linewidth=2)  # Mid Green
+    # plt.plot(df['take_3'], label='Take 3', color='#00441B', linewidth=2)    # Dark Green
 
-    plt.legend()
-    plt.xlabel('Epochs')
-    plt.ylabel('Action Counts')
-    plt.title('Action Selection per Epoch')
-    plt.grid(True)
-    plt.savefig('train actions.png')
+    # plt.legend()
+    # plt.xlabel('Epochs')
+    # plt.ylabel('Action Counts')
+    # plt.title('Action Selection per Epoch')
+    # plt.grid(True)
+    # plt.savefig('train actions.png')
 
-    # trained_model_path = "models/rl-chunk-retriever.pt"
-    # torch.save(online_net.state_dict(), trained_model_path)
+
 
