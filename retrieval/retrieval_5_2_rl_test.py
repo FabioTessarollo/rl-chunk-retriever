@@ -411,7 +411,7 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
 
 def test():
 
-    # logging.basicConfig(filename='rl_testing.log', level=logging.INFO, format='%(asctime)s - %(message)s', filemode="w")
+    logging.basicConfig(filename='rl_testing.log', level=logging.INFO, format='%(asctime)s - %(message)s', filemode="w")
 
     pages_path_test = f"data_3_embed/pages_chunked_emb_test.json"
     relevant_path_test = f"data_3_embed/relevant_chunks_emb_test.json"
@@ -427,15 +427,15 @@ def test():
     print(f"Using device: {device}")
 
     model = DuelingDQN(metadata_dim = 6, action_dim = 5, proj_dim = 512, dropout_p = 0).to(device)
-    model.load_state_dict(torch.load("models/rl-chunk-retriever_BEEEEEST copy.pt", map_location="cpu")) #rl-chunk-retriever copy
+    model.load_state_dict(torch.load("models/rl-chunk-retriever_BEEEEEST22.pt", map_location="cpu")) #rl-chunk-retriever copy
     model.eval()
 
-    # avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision, results = evaluate(
-    #     data_test, data_test.query_ids, model, device, 
-    #     max_exp_loops = 1
-    # )
-    # logging.info(f"GREEDY: TEST Reward: {avg_val_reward:.4f}, TEST F1: {avg_val_f1_score:.4f}")
-    # print(f"GREEDY: TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
+    avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision, results = evaluate(
+        data_test, data_test.query_ids, model, device, 
+        max_exp_loops = 1
+    )
+    logging.info(f"GREEDY: TEST Reward: {avg_val_reward:.4f}, TEST F1: {avg_val_f1_score:.4f}")
+    print(f"GREEDY: TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
 
     # output_dir = "data_5_analysis"
     # os.makedirs(output_dir, exist_ok=True)
@@ -456,9 +456,9 @@ def test():
     # data_train.load_cosine_sim()
 
     # compute_stream_feature_importance(
-    #     model, data_train, data_train.query_ids, device, max_exp_loops = 1, n_samples=100 #  + validation_set
+    #     model, data_test, data_test.query_ids, device, max_exp_loops = 1, n_samples=100 #  + validation_set
     # )
 
-    compute_stream_ablation_importance(
-        model, data_test, data_test.query_ids, device, max_exp_loops = 1, n_samples=100 #  + validation_set
-    )
+    # compute_stream_ablation_importance(
+    #     model, data_test, data_test.query_ids, device, max_exp_loops = 1, n_samples=100 #  + validation_set
+    # )
