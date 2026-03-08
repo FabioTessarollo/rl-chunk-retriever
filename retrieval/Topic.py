@@ -176,7 +176,7 @@ class Topic:
             out_was_not_relevant = c3 not in self.relevant_chunks
             if both_relevant:
                 reward = self.TP * 2
-                if out_was_not_relevant:
+                if out_was_not_relevant and c3 > 0:
                     reward += 0.15
             elif one_is_relevant:
                 reward = self.TP + self.FP

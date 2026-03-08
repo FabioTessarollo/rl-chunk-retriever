@@ -33,14 +33,11 @@ def compute_stream_ablation_importance(online_net, data, query_ids, device, max_
     sample_n = min(len(query_ids), n_samples)
     sampled_qids = random.sample(list(query_ids), sample_n)
 
-    # Per-feature accumulators for Q-drop and action-flip
     n_meta = len(metadata_feature_names)
     n_emb_groups = len(emb_group_names)
 
-    meta_q_drop = np.zeros(n_meta)
-    meta_flip   = np.zeros(n_meta)
-    emb_q_drop  = np.zeros(n_emb_groups)
-    emb_flip    = np.zeros(n_emb_groups)
+    meta_flip = np.zeros(n_meta)
+    emb_flip  = np.zeros(n_emb_groups)
     total_states = 0
 
     for qid in sampled_qids:
@@ -64,9 +61,8 @@ def compute_stream_ablation_importance(online_net, data, query_ids, device, max_
                 q_base, _, _ = online_net(
                     state_emb.unsqueeze(0), state_meta.unsqueeze(0), return_streams=True
                 )
-                q_base_vals  = q_base.squeeze(0)
-                action_base  = q_base_vals.argmax().item()
-                q_base_max   = q_base_vals[action_base].item()
+                q_base_vals = q_base.squeeze(0)
+                action_base = q_base_vals.argmax().item()
 
                 # --- Ablate each metadata feature individually ---
                 for i in range(n_meta):
@@ -75,14 +71,12 @@ def compute_stream_ablation_importance(online_net, data, query_ids, device, max_
                     q_abl, _, _ = online_net(
                         state_emb.unsqueeze(0), meta_ablated.unsqueeze(0), return_streams=True
                     )
-                    q_abl_vals = q_abl.squeeze(0)
-                    action_abl = q_abl_vals.argmax().item()
-                    meta_q_drop[i] += q_base_max - q_abl_vals[action_base].item()
-                    meta_flip[i]   += int(action_abl != action_base)
+                    action_abl = q_abl.squeeze(0).argmax().item()
+                    meta_flip[i] += int(action_abl != action_base)
 
                 # --- Ablate each embedding group individually ---
-                emb_len    = state_emb.numel()
-                groups     = n_emb_groups
+                emb_len = state_emb.numel()
+                groups  = n_emb_groups
                 assert emb_len % groups == 0, (
                     f"Embedding length {emb_len} not divisible by {groups} groups."
                 )
@@ -94,10 +88,8 @@ def compute_stream_ablation_importance(online_net, data, query_ids, device, max_
                     q_abl, _, _ = online_net(
                         emb_ablated.unsqueeze(0), state_meta.unsqueeze(0), return_streams=True
                     )
-                    q_abl_vals = q_abl.squeeze(0)
-                    action_abl = q_abl_vals.argmax().item()
-                    emb_q_drop[i] += q_base_max - q_abl_vals[action_base].item()
-                    emb_flip[i]   += int(action_abl != action_base)
+                    action_abl = q_abl.squeeze(0).argmax().item()
+                    emb_flip[i] += int(action_abl != action_base)
 
             total_states += 1
 
@@ -120,68 +112,53 @@ def compute_stream_ablation_importance(online_net, data, query_ids, device, max_
         return
 
     # --- Normalize ---
-    meta_q_drop_mean = meta_q_drop / total_states
-    meta_flip_rate   = meta_flip   / total_states
-    emb_q_drop_mean  = emb_q_drop  / total_states
-    emb_flip_rate    = emb_flip    / total_states
+    meta_flip_rate = meta_flip / total_states
+    emb_flip_rate  = emb_flip  / total_states
 
-    labels      = metadata_feature_names + emb_group_names
-    q_drop_all  = np.concatenate([meta_q_drop_mean, emb_q_drop_mean])
-    flip_all    = np.concatenate([meta_flip_rate,   emb_flip_rate])
+    labels   = metadata_feature_names + emb_group_names
+    flip_all = np.concatenate([meta_flip_rate, emb_flip_rate])
 
-    # Sort by action flip rate (most impactful first)
-    sort_idx    = np.argsort(flip_all)
-    labels      = [labels[i] for i in sort_idx]
-    q_drop_all  = q_drop_all[sort_idx]
-    flip_all    = flip_all[sort_idx]
+    # Sort by flip rate ascending (most impactful at top)
+    sort_idx = np.argsort(flip_all)
+    labels   = [labels[i] for i in sort_idx]
+    flip_all = flip_all[sort_idx]
 
-    y      = np.arange(len(labels))
-    height = 0.4
+    # Color by feature type
+    sorted_is_meta = [sort_idx[i] < n_meta for i in range(len(sort_idx))]
+    colors = ["steelblue" if is_meta else "darkorange" for is_meta in sorted_is_meta]
+
+    y = np.arange(len(labels))
 
     os.makedirs("feature_importance", exist_ok=True)
 
-    fig, axes = plt.subplots(1, 2, figsize=(16, 8))
-
-    # --- Plot 1: Action Flip Rate ---
-    axes[0].barh(y, flip_all, height=height * 1.5, color="steelblue")
-    axes[0].set_yticks(y)
-    axes[0].set_yticklabels(labels)
-    axes[0].set_xlabel("Action Flip Rate")
-    axes[0].set_title("Feature Importance — Action Flip Rate\n(how often ablation changes the decision)")
-    axes[0].grid(True, axis="x")
-
-    # Separator line between metadata and emb groups
-    meta_count = len(metadata_feature_names)
-    sep_pos    = (sort_idx < meta_count).sum() - 0.5  # how many meta features ended up in lower portion
-    axes[0].axhline(y=sep_pos, color="red", linestyle="--", linewidth=1, alpha=0.6, label="meta / emb boundary")
-    axes[0].legend(fontsize=8)
-
-    # --- Plot 2: Q-Value Drop ---
-    axes[1].barh(y, q_drop_all, height=height * 1.5, color="darkorange")
-    axes[1].set_yticks(y)
-    axes[1].set_yticklabels(labels)
-    axes[1].set_xlabel("Mean Q-Value Drop")
-    axes[1].set_title("Feature Importance — Q-Value Drop\n(how much expected value degrades)")
-    axes[1].grid(True, axis="x")
-    axes[1].axhline(y=sep_pos, color="red", linestyle="--", linewidth=1, alpha=0.6, label="meta / emb boundary")
-    axes[1].legend(fontsize=8)
-
-    plt.suptitle(
-        f"Ablation Feature Importance  (n={total_states} states, {sample_n} queries)\n"
-        f"Metadata ablated per-feature | Embeddings ablated per-group",
-        fontsize=11
+    plt.figure(figsize=(10, 8))
+    bars = plt.barh(y, flip_all, height=0.6, color=colors)
+    plt.yticks(y, labels)
+    plt.xlabel("Action Flip Rate")
+    plt.title(
+        f"Feature Importance — Action Flip Rate\n"
+        f"(n={total_states} states, {sample_n} queries)"
     )
+    plt.grid(True, axis="x")
+
+    # Legend for feature type
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor="steelblue",  label="Metadata"),
+        Patch(facecolor="darkorange", label="Embedding group"),
+    ]
+    plt.legend(handles=legend_elements)
     plt.tight_layout()
     plt.savefig("feature_importance/ablation_importance.png", dpi=150)
     plt.close()
 
     # --- Console summary ---
     print(f"\n=== Ablation Summary ({total_states} states) ===")
-    print(f"{'Feature':<45} {'Flip Rate':>10} {'Q-Drop':>10}")
-    print("-" * 67)
-    for lbl, flip, qdrop in zip(labels[::-1], flip_all[::-1], q_drop_all[::-1]):
+    print(f"{'Feature':<45} {'Flip Rate':>10}")
+    print("-" * 57)
+    for lbl, flip in zip(labels[::-1], flip_all[::-1]):
         tag = "[META]" if lbl in metadata_feature_names else "[EMB] "
-        print(f"{tag} {lbl:<38} {flip:>10.3f} {qdrop:>10.4f}")
+        print(f"{tag} {lbl:<38} {flip:>10.3f}")
 
 
 def compute_stream_feature_importance(online_net, data, query_ids, device, max_exp_loops, n_samples=1000):

@@ -29,11 +29,6 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops, history, epoch)
     val_f1_score = 0
     val_recall = 0
     val_precision = 0
-    a2f = 0
-    a2b = 0
-    a3 = 0
-    a1 = 0
-    s = 0
 
     epoch_counts = {'skip': 0, 'take_1': 0, 'take_2n': 0, 'take_2p': 0, 'take_3': 0}
 
@@ -337,11 +332,13 @@ def train():
 
         avg_train_reward, avg_train_f1_score, recall_train, precision_train, _, _ = evaluate(
             data, train_set, online_net, device,
-            max_exp_loops
+            max_exp_loops, history, epoch
         )
         logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
         print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}, Recall {recall_train:.4f}, Precision {precision_train:.4f}")
         train_f1_scores.append(avg_train_f1_score)
+        train_rewards.append(avg_train_reward)
+        train_recalls.append(recall_train)
 
 
         avg_val_reward, avg_val_f1_score, recall_val, precision_val, history, probs = evaluate(
