@@ -104,7 +104,7 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops, history, epoch)
     actions_f = [epoch_counts['skip'], epoch_counts['take_1'], epoch_counts['take_2n'], epoch_counts['take_2p'], epoch_counts['take_3']]
     second_index, first_value = sorted(enumerate(actions_f), key=lambda x: x[1])[0]
     second_index, second_value = sorted(enumerate(actions_f), key=lambda x: x[1])[1]
-    if second_value + first_value < 50:
+    if second_value + first_value < 50: #50
         weights = [1 / (f + 500) for f in actions_f]
         total = sum(weights)
         probs = [w / total for w in weights]
@@ -124,7 +124,9 @@ def train():
     data.load_relevant()
     data.load_cosine_sim()
 
-    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 0.66)
+    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 0.6)
+
+    #full_set, _ = data.balanced_split_query_ids(data.query_ids, 1)
 
     best_score = 0
     metadata_dim = 6
@@ -340,8 +342,7 @@ def train():
         train_rewards.append(avg_train_reward)
         train_recalls.append(recall_train)
 
-
-        avg_val_reward, avg_val_f1_score, recall_val, precision_val, history, probs = evaluate(
+        avg_val_reward, avg_val_f1_score, recall_val, precision_val, history, _ = evaluate(
             data, validation_set, online_net, device,
             max_exp_loops, history, epoch
         )
@@ -350,6 +351,11 @@ def train():
         val_f1_scores.append(avg_val_f1_score)
         val_rewards.append(avg_val_reward)
         val_recalls.append(recall_val)
+
+        _, _, _, _, _, probs = evaluate(
+            data, random.sample(train_set, 50), online_net, device,
+            max_exp_loops, history, epoch
+        )
 
 
 
