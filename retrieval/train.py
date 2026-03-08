@@ -10,7 +10,6 @@ import matplotlib
 matplotlib.use('Agg') # Must be called before importing plt
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 
 from retrieval.Data import Data
 from retrieval.Topic import Topic
@@ -23,7 +22,7 @@ random.seed(1)
 torch.manual_seed(1)
 
 
-def evaluate(data, query_ids, online_net, device, max_exp_loops, history, epoch):
+def evaluate(data, query_ids, online_net, device, max_exp_loops):
     """Evaluate the model on validation set without training"""
     val_reward = 0
     val_f1_score = 0
@@ -34,8 +33,6 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops, history, epoch)
     a3 = 0
     a1 = 0
     s = 0
-
-    epoch_counts = {'skip': 0, 'take_1': 0, 'take_2n': 0, 'take_2p': 0, 'take_3': 0}
 
     for query_id in query_ids:
         query = data.get_query_obj_from_id(query_id)
@@ -70,19 +67,19 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops, history, epoch)
 
                 if action == 0:
                     next_emb, next_meta, reward, done, truncated = topic.skip()
-                    epoch_counts['skip'] += 1
+                    s += 1
                 elif action == 1:
                     next_emb, next_meta, reward, done, truncated= topic.take_single()
-                    epoch_counts['take_1'] += 1
+                    a1 += 1
                 elif action == 2:
                     next_emb, next_meta, reward, done, truncated = topic.take_double()
-                    epoch_counts['take_2n'] += 1
+                    a2f += 1
                 elif action == 3:
                     next_emb, next_meta, reward, done, truncated = topic.take_prev_double()
-                    epoch_counts['take_2p'] += 1
+                    a2b += 1
                 elif action == 4:
                     next_emb, next_meta, reward, done, truncated = topic.take_triple()
-                    epoch_counts['take_3'] += 1
+                    a3 += 1
 
                 logging.info(f"{action_log}, Action Code: {action}, Reward: {reward:.4f}")
 
@@ -103,10 +100,10 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops, history, epoch)
     avg_val_f1_score = val_f1_score / len(query_ids)
     avg_val_recall = val_recall / len(query_ids)
     avg_val_precision = val_precision / len(query_ids)
-    epoch_counts['epoch'] = epoch
-    history.append(epoch_counts)
 
-    actions_f = [epoch_counts['skip'], epoch_counts['take_1'], epoch_counts['take_2n'], epoch_counts['take_2p'], epoch_counts['take_3']]
+    print(s, a1, a2f, a2b, a3)
+
+    actions_f = [s, a1, a2f, a2b, a3]
     second_index, first_value = sorted(enumerate(actions_f), key=lambda x: x[1])[0]
     second_index, second_value = sorted(enumerate(actions_f), key=lambda x: x[1])[1]
     if second_value + first_value < 50:
@@ -115,8 +112,10 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops, history, epoch)
         probs = [w / total for w in weights]
     else:
         probs = []
+    
+    print(probs)
 
-    return avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision, history, probs
+    return avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision, probs
 
 def train():
 
@@ -129,12 +128,22 @@ def train():
     data.load_relevant()
     data.load_cosine_sim()
 
-    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 0.66)
+    pages_path_test = f"data_3_embed/pages_chunked_emb_test.json"
+    relevant_path_test = f"data_3_embed/relevant_chunks_emb_test.json"
+    cosine_sim_path_test = "data_4_cos_sim/cosine_sim_rank_threshold_only_single_test.json"
+
+    data_test = Data(pages_path_test, relevant_path_test, cosine_sim_path_test)
+    data_test.load_pages()
+    data_test.load_relevant()
+    data_test.load_cosine_sim()
+
+    train_set, _ = data.balanced_split_query_ids(data.query_ids, 1)
+
+    _, validation_set = data.balanced_split_query_ids(data.query_ids, 0)
 
     best_score = 0
     metadata_dim = 6
     epsilon = 1.0
-
 
     proj_dim = 512
     gamma = 0.99
@@ -157,7 +166,6 @@ def train():
     neg_schedule = torch.linspace(0.30, 0.50, steps=50)
     #neg_schedule = torch.linspace(0.20, 0.50, steps=20)
     probs = []
-    history = []
 
 
     es = EarlyStopping(patience=10, delta_ratio=0.001) #12? #15? #10?
@@ -189,10 +197,6 @@ def train():
     step_count = 0
     train_f1_scores = []
     val_f1_scores = []
-    train_rewards = []
-    val_rewards = []
-    train_recalls = []
-    val_recalls = []
     for epoch in range(epochs):
         online_net.train()
         epoch_reward = 0
@@ -262,6 +266,7 @@ def train():
                     next_emb, next_meta, reward, done, truncated = topic.take_prev_double()
                 elif action == 4:
                     next_emb, next_meta, reward, done, truncated = topic.take_triple()
+
                 #logging.info(f"{action_log}, Action Code: {action}, Reward: {reward:.4f}, Rand: {int(rand)}")
 
                 next_emb = next_emb.to(device)
@@ -333,9 +338,11 @@ def train():
         scheduler.step()
 
 
+        # Greedy evaluation
+        # if epoch > 40:
         online_net.eval()
 
-        avg_train_reward, avg_train_f1_score, recall_train, precision_train, _, _ = evaluate(
+        avg_train_reward, avg_train_f1_score, recall_train, precision_train, _ = evaluate(
             data, train_set, online_net, device,
             max_exp_loops
         )
@@ -344,17 +351,36 @@ def train():
         train_f1_scores.append(avg_train_f1_score)
 
 
-        avg_val_reward, avg_val_f1_score, recall_val, precision_val, history, probs = evaluate(
+        avg_val_reward, avg_val_f1_score, recall_val, precision_val, probs  = evaluate(
             data, validation_set, online_net, device,
-            max_exp_loops, history, epoch
+            max_exp_loops
         )
         logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
         print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall_val:.4f}, Precision {precision_val:.4f}")
         val_f1_scores.append(avg_val_f1_score)
-        val_rewards.append(avg_val_reward)
-        val_recalls.append(recall_val)
 
 
+        # avg_val_reward, avg_val_f1_score, recall_val, precision_val, probs  = evaluate(
+        #     data, random.sample(validation_set, 50), online_net, device,
+        #     max_exp_loops
+        # )
+        # logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
+        # print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall_val:.4f}, Precision {precision_val:.4f}")
+        # val_f1_scores.append(avg_val_f1_score)
+
+
+        # if epoch > 17:
+        #     avg_val_reward, avg_val_f1_score, recall, precision, _  = evaluate(
+        #         data_test, data_test.query_ids, online_net, device,
+        #         max_exp_loops
+        #     )
+        #     print(f"TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall:.4f}, Precision {precision:.4f}")
+        #     trained_model_path = f"models/rl-chunk-retriever_BEEEEEST{epoch}.pt"
+        #     torch.save(online_net.state_dict(), trained_model_path)
+
+            # if es.step(avg_val_f1_score):
+            #     print(f"Early stopping at epoch {epoch}")
+            #     break
 
     extra_logger.info(f"{now_str}\t{proj_dim}\t{gamma}\t{epsilon_min}\t{epsilon_decay}\t{batch_size}\t{replay_capacity}\t{lr}\t{target_update}\t{epochs}\t{max_exp_loops}\t{action_dim}\t{scheduler_type}\t{per_alpha}\t{per_beta}\t{per_beta_increment}\t{dropout_p}\t{best_score:.4f}")
 
@@ -367,48 +393,7 @@ def train():
     plt.title('Train and Validation F1 Scores')
     plt.legend()
     plt.grid(True)
-    plt.savefig('train_vs_val_f1_score.png')
-
-
-    plt.figure(figsize=(7,5))
-    plt.plot(train_rewards, label='train')
-    plt.plot(val_rewards, label='val')
-    plt.legend()
-    plt.xlabel('Epoches')
-    plt.ylabel('Reward')
-    plt.title('Train and Validation Reward')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig('train_vs_val_reward.png')
-
-    plt.figure(figsize=(7,5))
-    plt.plot(train_recalls, label='train')
-    plt.plot(val_recalls, label='val')
-    plt.legend()
-    plt.xlabel('Epoches')
-    plt.ylabel('Recall')
-    plt.title('Train and Validation Recall')
-    plt.legend()
-    plt.grid(True)
-    plt.savefig('train_vs_val_recall.png')
-
-    df = pd.DataFrame(history).set_index('epoch')
-
-    plt.figure(figsize=(7, 5))
-
-    # Plot each series manually to control colors exactly
-    plt.plot(df['skip'], label='Skip', color='#7A8582', linewidth=2)
-    plt.plot(df['take_1'], label='Take 1', color='#95bf74', linewidth=2)    # Light Green
-    plt.plot(df['take_2p'], label='Take 2f', color='#659b5e', linewidth=2)  # Mid Green
-    plt.plot(df['take_2n'], label='Take 2b', color='#556f44', linewidth=2)  # Mid Green
-    plt.plot(df['take_3'], label='Take 3', color='#283f3b', linewidth=2)    # Dark Green
-
-    plt.legend()
-    plt.xlabel('Epochs')
-    plt.ylabel('Action Counts')
-    plt.title('Action Selection per Epoch')
-    plt.grid(True)
-    plt.savefig('train actions.png')
+    plt.savefig('train_vs_val_3c_2.png')
 
     # trained_model_path = "models/rl-chunk-retriever.pt"
     # torch.save(online_net.state_dict(), trained_model_path)

@@ -118,7 +118,7 @@ class Topic:
                 reward -= (1 - self.current_rank_chunk/5)/4
 
             if c2 in self.relevant_chunks and c3 in self.relevant_chunks:
-                reward -= 0.2
+                reward -= 0.25
             elif c2 in self.relevant_chunks or c3 in self.relevant_chunks:
                 reward -= 0.1
         else:
