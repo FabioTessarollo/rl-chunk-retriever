@@ -6,14 +6,11 @@ from collections import defaultdict
 
 class Data:
 
-    def __init__(self, pages_path, relevant_path, pages_doub_even_path, pages_doub_odd_path, cosine_sim_rank_path = None, single_similarities_path = None, double_similarities_path = None):
+    def __init__(self, pages_path, relevant_path, cosine_sim_rank_path = None):
         self.pages_path = pages_path
         self.relevant_path = relevant_path
+        self.cosine_sim_rank = None
         self.cosine_sim_rank_path = cosine_sim_rank_path
-        self.pages_doub_even_path = pages_doub_even_path
-        self.pages_doub_odd_path = pages_doub_odd_path
-        self.single_similarities_path = single_similarities_path
-        self.double_similarities_path = double_similarities_path
         self.device = torch.device("mps")
         self.cosine_sim_rank_wb = {}
 
@@ -22,41 +19,16 @@ class Data:
             self.pages = json.load(f)
             self.pages_ids = [page['page_id'] for page in self.pages]
 
-    def load_pages_even(self):
-        with open(self.pages_doub_even_path, 'r', encoding='utf-8') as f:
-            self.pages_even = json.load(f)
-            self.pages_even_ids = [page['page_id'] for page in self.pages_even]
-
-    def load_pages_odd(self):
-        with open(self.pages_doub_odd_path, 'r', encoding='utf-8') as f:
-            self.pages_odd = json.load(f)
-            self.pages_odd_ids = [page['page_id'] for page in self.pages_odd]
-
     def load_relevant(self):
         with open(self.relevant_path, 'r', encoding='utf-8') as f:
             self.relevant = json.load(f)
             self.query_ids = [query['query_id'] for query in self.relevant]
 
-    def load_single_sims(self):
-        with open(self.single_similarities_path, 'r', encoding='utf-8') as f:
-            self.single_similarities = json.load(f)
-
-    def load_double_sims(self):
-        with open(self.double_similarities_path, 'r', encoding='utf-8') as f:
-            self.double_similarities = json.load(f)
-
     def load_cosine_sim(self):
         with open(self.cosine_sim_rank_path, 'r', encoding='utf-8') as f:
             self.cosine_sim_rank = json.load(f)
+            print(f"Number of entries: {len(self.cosine_sim_rank) if isinstance(self.cosine_sim_rank, dict) else 'N/A'}")
             self.cosine_sim_rank = {k: v['relevant_chunks'] for k, v in self.cosine_sim_rank.items() if v}
-
-    def get_sims_single_from_query_id(self, query_id):
-        sims = self.single_similarities[str(query_id)]
-        return sims["similarities"]
-    
-    def get_sims_double_from_query_id(self, query_id):
-        sims = self.double_similarities[str(query_id)]
-        return sims["similarities"]
 
     def get_ranked_with_prev_chunks_from_query_id(self, query_id):
         ranked_chunks = self.cosine_sim_rank[str(query_id)]
@@ -75,13 +47,9 @@ class Data:
 
     def get_page_chunks_dict(self, page_id):
         page = next((page for page in self.pages if page["page_id"] == page_id), None)
-        page_even = next((page for page in self.pages_even if page["page_id"] == page_id), None)
-        page_odd = next((page for page in self.pages_odd if page["page_id"] == page_id), None)
-        if page and page_even and page_odd:
+        if page:
             page_obj = {chunk["chunk_id"]: torch.tensor(chunk["embedding"], device=self.device) for chunk in page.get("chunks", [])}
-            page_obj_even = {chunk["chunk_id"]: torch.tensor(chunk["embedding"], device=self.device) for chunk in page_even.get("chunks", [])}
-            page_obj_odd = {chunk["chunk_id"]: torch.tensor(chunk["embedding"], device=self.device) for chunk in page_odd.get("chunks", [])}
-            return page_obj, page_obj_even, page_obj_odd
+            return page_obj
         return {}
 
     def get_query_obj_from_id(self, query_id):
@@ -215,7 +183,16 @@ class Data:
 
         return first_set, second_set
 
-            
+    def get_full_set(self):
 
-            
+        pages = {}
 
+        # map page_id -> list of query_ids
+        for q in self.query_ids:
+            query = self.get_query_obj_from_id(q)
+            page_id = query.get("page_id")
+            if page_id not in pages:
+                pages[page_id] = []
+            pages[page_id].append(q)
+
+        return pages

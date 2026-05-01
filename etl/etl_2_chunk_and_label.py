@@ -1,6 +1,7 @@
 import json
 import re
 import os
+from collections import defaultdict
 
 def chunk_text(text, chunk_size=100):
     # Split text into words and keep track of char spans
@@ -50,6 +51,8 @@ def process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chu
             query = entry['query']
             page_id = entry['page_id']
             paragraphs = entry['relevant_paragraphs']
+            relevant_paragraph_origin = {}
+            chunks_completeness = []
 
             page_text = pages_text_map.get(page_id)
             page_chunks = pages_chunks_map.get(page_id)
@@ -57,7 +60,7 @@ def process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chu
                 continue
 
             relevant_chunks = set()
-            for para in paragraphs:
+            for i, para in enumerate(paragraphs):
                 snippet = para[:50]  # use first 50 characters to locate it
                 start_index = page_text.find(snippet)
                 if start_index == -1:
@@ -71,28 +74,50 @@ def process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chu
                     chunk_end = chunk_start + len(chunk_text)
                     if chunk_start == -1:
                         continue
-                    if not (end_index <= chunk_start or start_index >= chunk_end):
+
+                    overlap = min(end_index, chunk_end) - max(start_index, chunk_start)
+                    if overlap > 0.05 * (chunk_end - chunk_start):
                         relevant_chunks.add(chunk_id)
+                        relevant_paragraph_origin[chunk_id] = i
+
+                        if end_index >= chunk_end and start_index <= chunk_start:
+                            completeness = 1
+                        elif chunk_start < start_index and start_index <= chunk_end:
+                            completeness = (chunk_end - start_index) / (chunk_end - chunk_start)
+                        elif end_index >= chunk_start and end_index < chunk_end:
+                            completeness = (end_index - chunk_start) / (chunk_end - chunk_start)
+                        chunks_completeness.append({chunk_id: completeness})
+
+            agg = defaultdict(float)
+            for item in chunks_completeness:
+                for k, v in item.items():
+                    k = int(k)
+                    v = float(v)
+                    agg[k] = v if k not in agg else max(agg[k], v)
+
+            chunks_completeness = [{k: agg[k]} for k in sorted(agg)]
 
             relevant_output.append({
                 "query": query,
                 "page_id": page_id,
-                "relevant_chunks": sorted(relevant_chunks)
+                "relevant_chunks": sorted(relevant_chunks),
+                "relevant_paragraph_origin": relevant_paragraph_origin,
+                "chunk_relevant_portion": chunks_completeness
             })
 
     with open(relevant_out_path, 'w', encoding='utf-8') as out:
         json.dump(relevant_output, out, ensure_ascii=False, indent=2)
 
-def main():
-    pages_path = 'data_extract/pages.jsonl'
-    relevant_path = 'data_extract/relevant_paragraphs.jsonl'
-    pages_out_path = 'data_chunks/pages_chunked.json'
-    relevant_out_path = 'data_chunks/relevant_chunks.json'
-    chunk_size = 100
+def chunk_and_label(set, chunk_size = 50):
+    
+    # input
+    pages_path = f"data_1_extract/pages_{set}.jsonl"
+    relevant_path = f"data_1_extract/relevant_paragraphs_{set}.jsonl"
 
-    os.makedirs('data_chunks', exist_ok=True)
+    # output
+    pages_out_path = f'data_2_chunk_and_label/pages_chunked_{set}.json'
+    relevant_out_path = f'data_2_chunk_and_label/relevant_chunks_{set}.json'
+
+    os.makedirs('data_2_chunk_and_label', exist_ok=True)
     pages_text_map, pages_chunks_map = process_pages(pages_path, pages_out_path, chunk_size)
     process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chunks_map, chunk_size)
-
-if __name__ == '__main__':
-    main()

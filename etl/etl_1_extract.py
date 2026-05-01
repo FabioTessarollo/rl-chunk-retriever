@@ -81,16 +81,16 @@ def get_full_page_texts(pages_path, paras_path):
     return pageid_to_fulltext
 
 
-def process_fold(fold_idx, all_pages, all_queries, set, folds = False):
-    base_dir = f"data/benchmarkY1-{set}"
-    if folds:
-        paras = f"{base_dir}/fold-{fold_idx}-{set}.pages.cbor-paragraphs.cbor"
-        outlines = f"{base_dir}/fold-{fold_idx}-{set}.pages.cbor-outlines.cbor"
-        pages = f"{base_dir}/fold-{fold_idx}-{set}.pages.cbor"
+def process_fold(fold_idx, all_pages, all_queries, dataset, folds = False):
+    base_dir = f"data_0_raw/benchmarkY1-{dataset}"
+    if folds and dataset == 'train':
+        paras = f"{base_dir}/fold-{fold_idx}-{dataset}.pages.cbor-paragraphs.cbor"
+        outlines = f"{base_dir}/fold-{fold_idx}-{dataset}.pages.cbor-outlines.cbor"
+        pages = f"{base_dir}/fold-{fold_idx}-{dataset}.pages.cbor"
     else:
-        paras = f"{base_dir}/{set}.pages.cbor-paragraphs.cbor"
-        outlines = f"{base_dir}/{set}.pages.cbor-outlines.cbor"
-        pages = f"{base_dir}/{set}.pages.cbor" 
+        paras = f"{base_dir}/{dataset}.pages.cbor-paragraphs.cbor"
+        outlines = f"{base_dir}/{dataset}.pages.cbor-outlines.cbor"
+        pages = f"{base_dir}/{dataset}.pages.cbor" 
 
     qrels_path = outlines.replace("outlines.cbor", "hierarchical.qrels")
 
@@ -138,29 +138,24 @@ def process_fold(fold_idx, all_pages, all_queries, set, folds = False):
         }
         all_queries.append(query_entry)
 
+def extract(set):
 
-# --- Main execution ---
-all_pages = []
-all_queries = []
+    all_pages = []
+    all_queries = []
+    os.makedirs("data_1_extract", exist_ok=True)
 
-# for fold in range(5):
-#     process_fold(fold, all_pages, all_queries, 'train', True)
+    process_fold(0, all_pages, all_queries, set, False)
 
-process_fold(0, all_pages, all_queries, 'train', False)
+    # Write combined pages.jsonl
+    pages_output = f"data_1_extract/pages_{set}.jsonl"
+    with open(pages_output, 'w', encoding='utf-8') as pages_file:
+        for entry in all_pages:
+            pages_file.write(json.dumps(entry) + "\n")
+    print(f"\nExported {len(all_pages)} total pages to {pages_output}")
 
-# Ensure output directory exists
-os.makedirs("data_extract", exist_ok=True)
-
-# Write combined pages.jsonl
-pages_output = "data_extract/pages.jsonl"
-with open(pages_output, 'w', encoding='utf-8') as pages_file:
-    for entry in all_pages:
-        pages_file.write(json.dumps(entry) + "\n")
-print(f"\nExported {len(all_pages)} total pages to {pages_output}")
-
-# Write combined relevant_paragraphs.jsonl
-queries_output = "data_extract/relevant_paragraphs.jsonl"
-with open(queries_output, 'w', encoding='utf-8') as queries_file:
-    for entry in all_queries:
-        queries_file.write(json.dumps(entry) + "\n")
-print(f"Exported {len(all_queries)} total queries to {queries_output}")
+    # Write combined relevant_paragraphs.jsonl
+    queries_output = f"data_1_extract/relevant_paragraphs_{set}.jsonl"
+    with open(queries_output, 'w', encoding='utf-8') as queries_file:
+        for entry in all_queries:
+            queries_file.write(json.dumps(entry) + "\n")
+    print(f"Exported {len(all_queries)} total queries to {queries_output}")

@@ -1,5 +1,5 @@
 [project]
-name = "rl-chunk-selector"
+name = "rl-chunks-retriever"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -16,10 +16,12 @@ dependencies = [
     "jinja2==3.1.6",
     "joblib==1.5.1",
     "markupsafe==3.0.2",
+    "matplotlib>=3.10.7",
     "mpmath==1.3.0",
     "networkx==3.5",
     "numpy==2.3.1",
     "packaging==25.0",
+    "pandas>=2.3.3",
     "pillow==11.3.0",
     "pyyaml==6.0.2",
     "regex==2024.11.6",
@@ -35,5 +37,5 @@ dependencies = [
     "tqdm==4.67.1",
     "transformers==4.53.2",
     "typing-extensions==4.14.1",
-    "urllib3==2.5.0"
+    "urllib3==2.5.0",
 ]
