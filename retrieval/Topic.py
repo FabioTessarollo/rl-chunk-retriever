@@ -2,7 +2,7 @@ import torch
 
 class Topic:
 
-    def __init__(self, query_emb, page_chunks_dict, ranked_chunks, relevant_chunks, max_exp_loops):
+    def __init__(self, query_emb, page_chunks_dict, ranked_chunks, relevant_chunks, max_exp_loops, device=None, reward_cfg=None):
         self.current_rank_chunk = 0 # rank position of the current chunk - to navigate the rank
         self.current_chunk_id = 0 # chunk id value of the current chunk - to navigate the page
         self.query_emb = query_emb
@@ -17,16 +17,16 @@ class Topic:
         self.reward_f1 = 0
         self.recall = 0
         self.precision = 0
-        self.device = torch.device("mps")
+        self.device = device if device is not None else torch.device("cpu")
         self.bag_of_chunks_embedding = torch.zeros(len(query_emb), dtype=torch.float32, device = self.device)
         self.current_loop = 0
         self.max_exp_loops = max_exp_loops
         self.curr_chunk_emb = None
         self.next_chunk_emb = None
         self.prev_chunk_emb = None
-        self.TP = 1/3
-        self.FP = -1/6
-        self.FN = -1/2
+        self.TP = reward_cfg.tp if reward_cfg else 1/3
+        self.FP = reward_cfg.fp if reward_cfg else -1/6
+        self.FN = reward_cfg.fn if reward_cfg else -1/2
         #self.max_reward = self.TP * 3
 
     def _advance_rank(self):

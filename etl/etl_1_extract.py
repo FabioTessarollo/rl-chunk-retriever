@@ -2,6 +2,7 @@ import os
 import json
 from collections import defaultdict
 from trec_car.read_data import iter_outlines, iter_paragraphs, iter_pages
+from config import get_config
 
 
 def parse_qrels(qrels_path):
@@ -81,8 +82,8 @@ def get_full_page_texts(pages_path, paras_path):
     return pageid_to_fulltext
 
 
-def process_fold(fold_idx, all_pages, all_queries, dataset, folds = False):
-    base_dir = f"data_0_raw/benchmarkY1-{dataset}"
+def process_fold(fold_idx, all_pages, all_queries, dataset, raw_dir, folds = False):
+    base_dir = f"{raw_dir}/benchmarkY1-{dataset}"
     if folds and dataset == 'train':
         paras = f"{base_dir}/fold-{fold_idx}-{dataset}.pages.cbor-paragraphs.cbor"
         outlines = f"{base_dir}/fold-{fold_idx}-{dataset}.pages.cbor-outlines.cbor"
@@ -138,23 +139,28 @@ def process_fold(fold_idx, all_pages, all_queries, dataset, folds = False):
         }
         all_queries.append(query_entry)
 
-def extract(set):
+def extract(dataset, cfg=None):
+    if cfg is None:
+        cfg = get_config()
+
+    raw_dir = cfg.data.raw_dir
+    extract_dir = cfg.data.extract_dir
 
     all_pages = []
     all_queries = []
-    os.makedirs("data_1_extract", exist_ok=True)
+    os.makedirs(extract_dir, exist_ok=True)
 
-    process_fold(0, all_pages, all_queries, set, False)
+    process_fold(0, all_pages, all_queries, dataset, raw_dir, False)
 
     # Write combined pages.jsonl
-    pages_output = f"data_1_extract/pages_{set}.jsonl"
+    pages_output = f"{extract_dir}/pages_{dataset}.jsonl"
     with open(pages_output, 'w', encoding='utf-8') as pages_file:
         for entry in all_pages:
             pages_file.write(json.dumps(entry) + "\n")
     print(f"\nExported {len(all_pages)} total pages to {pages_output}")
 
     # Write combined relevant_paragraphs.jsonl
-    queries_output = f"data_1_extract/relevant_paragraphs_{set}.jsonl"
+    queries_output = f"{extract_dir}/relevant_paragraphs_{dataset}.jsonl"
     with open(queries_output, 'w', encoding='utf-8') as queries_file:
         for entry in all_queries:
             queries_file.write(json.dumps(entry) + "\n")

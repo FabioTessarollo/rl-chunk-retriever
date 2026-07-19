@@ -13,11 +13,9 @@ import numpy as np
 from retrieval.Data import Data
 from retrieval.Topic import Topic
 from retrieval.DuelingDQN import DuelingDQN
-
+from config import get_config, get_device, set_seed
 
 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-random.seed(1)
-torch.manual_seed(1)
 
 def compute_stream_ablation_importance(online_net, data, query_ids, device, max_exp_loops, n_samples=1000):
     import os
@@ -381,56 +379,31 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops):
     return avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision, results
 
 
-def test():
+def test(cfg=None):
+    if cfg is None:
+        cfg = get_config()
 
-    # logging.basicConfig(filename='rl_testing.log', level=logging.INFO, format='%(asctime)s - %(message)s', filemode="w")
+    set_seed(cfg)
+    device = get_device(cfg)
+    print(f"Using device: {device}")
 
-    pages_path_test = f"data_3_embed/pages_chunked_emb_test.json"
-    relevant_path_test = f"data_3_embed/relevant_chunks_emb_test.json"
-    cosine_sim_path_test = "data_4_cos_sim/cosine_sim_rank_threshold_only_single_test.json"
+    embed_dir = cfg.data.embed_dir
+    cos_sim_dir = cfg.data.cos_sim_dir
+    t = cfg.training
 
-    data_test = Data(pages_path_test, relevant_path_test, cosine_sim_path_test)
+    pages_path_test = f"{embed_dir}/pages_chunked_emb_test.json"
+    relevant_path_test = f"{embed_dir}/relevant_chunks_emb_test.json"
+    cosine_sim_path_test = f"{cos_sim_dir}/cosine_sim_rank_threshold_only_single_test.json"
+
+    data_test = Data(pages_path_test, relevant_path_test, cosine_sim_path_test, device)
     data_test.load_pages()
     data_test.load_relevant()
     data_test.load_cosine_sim()
 
-    # Set device
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-    print(f"Using device: {device}")
-
-    model = DuelingDQN(metadata_dim = 6, action_dim = 5, proj_dim = 512, dropout_p = 0).to(device)
-    model.load_state_dict(torch.load("models/rl-chunk-retriever_BEEEEEST22.pt", map_location="cpu")) #rl-chunk-retriever copy
+    model = DuelingDQN(metadata_dim=t.metadata_dim, action_dim=t.action_dim, proj_dim=t.proj_dim, dropout_p=t.dropout, embedding_dim=cfg.model.embedding_dim).to(device)
+    model.load_state_dict(torch.load(cfg.model.path, map_location="cpu"))
     model.eval()
 
-    # avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision, results = evaluate(
-    #     data_test, data_test.query_ids, model, device, 
-    #     max_exp_loops = 1
-    # )
-    # logging.info(f"GREEDY: TEST Reward: {avg_val_reward:.4f}, TEST F1: {avg_val_f1_score:.4f}")
-    # print(f"GREEDY: TEST - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}")
-
-    # output_dir = "data_5_analysis"
-    # os.makedirs(output_dir, exist_ok=True)
-
-    # output_file = os.path.join(output_dir, "rl_model_retrieved_test_single.json")
-    # with open(output_file, 'w') as f:
-    #     json.dump(results, f, indent=2)
-
-        #############
-
-    # pages_path = "data_3_embed/pages_chunked_emb_train.json"
-    # relevant_path = "data_3_embed/relevant_chunks_emb_train.json"
-    # cosine_sim_path = "data_4_cos_sim/cosine_sim_rank_threshold_only_single_train.json" #_train
-
-    # data_train = Data(pages_path, relevant_path, cosine_sim_path)
-    # data_train.load_pages()
-    # data_train.load_relevant()
-    # data_train.load_cosine_sim()
-
-    # compute_stream_feature_importance(
-    #     model, data_test, data_test.query_ids, device, max_exp_loops = 1, n_samples=100 #  + validation_set
-    # )
-
     compute_stream_ablation_importance(
-        model, data_test, data_test.query_ids, device, max_exp_loops = 1, n_samples=200 #  + validation_set
+        model, data_test, data_test.query_ids, device, max_exp_loops=t.max_exp_loops, n_samples=200
     )

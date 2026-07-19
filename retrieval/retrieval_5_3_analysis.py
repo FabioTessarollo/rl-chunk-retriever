@@ -4,14 +4,18 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
+from config import get_config
 
 
-# Define the file paths
-RL_MODEL_FILE = 'data_5_analysis/rl_model_retrieved_test_single.json' 
-COS_SIM_FILE = 'data_4_cos_sim/cosine_sim_rank_retrieved_test_single.json'
-RANKINGS = 'data_4_cos_sim/cosine_sim_rank_threshold_only_single_test.json'
-CHUNKS_SCORES_FILE = 'data_2_chunk_and_label/relevant_chunks_test.json'
-OUTPUT_MERGED = "data_5_analysis/comprehensive_merged_results_single.json"
+def _get_paths(cfg):
+    """Resolve file paths from config."""
+    return {
+        'rl_model': f'{cfg.data.analysis_dir}/rl_model_retrieved_test_single.json',
+        'cos_sim': f'{cfg.data.cos_sim_dir}/cosine_sim_rank_retrieved_test_single.json',
+        'rankings': f'{cfg.data.cos_sim_dir}/cosine_sim_rank_threshold_only_single_test.json',
+        'chunks_scores': f'{cfg.data.chunk_dir}/relevant_chunks_test.json',
+        'output_merged': f'{cfg.data.analysis_dir}/comprehensive_merged_results_single.json',
+    }
 
 def f1_score(pred_ids, true_ids, all_ids):
     tp = len(set(pred_ids) & set(true_ids))
@@ -26,23 +30,23 @@ def f1_score(pred_ids, true_ids, all_ids):
     return f1, recall, precision, fpr
 
 
-def merge_json_data():
+def merge_json_data(paths):
     """
     Merge data from three JSON files by matching queries.
     The resulting merged data is ordered by page_id and query.
     """
     
     # Load all data files
-    with open(RL_MODEL_FILE, 'r') as f:
+    with open(paths['rl_model'], 'r') as f:
         rl_data = json.load(f)
     
-    with open(COS_SIM_FILE, 'r') as f:
+    with open(paths['cos_sim'], 'r') as f:
         cos_sim_data = json.load(f)
     
-    with open(CHUNKS_SCORES_FILE, 'r') as f:
+    with open(paths['chunks_scores'], 'r') as f:
         chunks_data = json.load(f)
 
-    with open(RANKINGS, 'r') as f:
+    with open(paths['rankings'], 'r') as f:
         rankings = json.load(f)
     
     # Create lookup dictionaries
@@ -324,15 +328,21 @@ def plot_relevance_coverage(thresholds, final_data):
     plt.show()
     print("Saved → recall_over_threshold.png")
 
-def analyze():
+def analyze(cfg=None):
+    if cfg is None:
+        cfg = get_config()
+
+    paths = _get_paths(cfg)
+    analysis_dir = cfg.data.analysis_dir
+
     # Merge data
-    final_data = merge_json_data()
+    final_data = merge_json_data(paths)
     
     # Save merged data to file
-    os.makedirs(os.path.dirname(OUTPUT_MERGED), exist_ok=True)
-    with open(OUTPUT_MERGED, 'w') as f:
+    os.makedirs(os.path.dirname(paths['output_merged']), exist_ok=True)
+    with open(paths['output_merged'], 'w') as f:
         json.dump(final_data, f, indent=4)
-    print(f"Merged data saved to {OUTPUT_MERGED}")
+    print(f"Merged data saved to {paths['output_merged']}")
     
     # Calculate and print metrics
     metrics = calculate_metrics(final_data)
@@ -350,7 +360,7 @@ def analyze():
 
     filtered_results = process_all_queries(final_data, 1, topk = 100, return_avg_scores=True)
 
-    with open('data_5_analysis/filtered_results.json', 'w') as f:
+    with open(f'{analysis_dir}/filtered_results.json', 'w') as f:
         json.dump(filtered_results, f, indent=2)
 
     thresholds = np.arange(1, 0, -0.1)

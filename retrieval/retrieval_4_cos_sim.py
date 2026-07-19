@@ -7,6 +7,7 @@ from retrieval.Data import Data
 from sklearn.metrics.pairwise import cosine_similarity
 import matplotlib.pyplot as plt
 from sklearn.metrics import auc
+from config import get_config, get_device
 
 def get_cosine_sim(v1, v2):
     similarity = torch.nn.functional.cosine_similarity(v1.unsqueeze(0), v2.unsqueeze(0))
@@ -187,24 +188,30 @@ def get_rankings_with_threshold(data, query_ids, threshold, device, top_k, n_exa
     
     return rankings
 
-def cos_sim():
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
+def cos_sim(cfg=None):
+    if cfg is None:
+        cfg = get_config()
 
-    pages_path = "data_3_embed/pages_chunked_emb_train.json"
-    relevant_path = "data_3_embed/relevant_chunks_emb_train.json"
-    cosine_sim_path = "data_4_cos_sim/cosine_sim_rank_threshold_only_single.json"
+    device = get_device(cfg)
+    embed_dir = cfg.data.embed_dir
+    cos_sim_dir = cfg.data.cos_sim_dir
+    cs = cfg.retrieval.cos_sim
 
-    data = Data(pages_path, relevant_path, cosine_sim_path)
+    pages_path = f"{embed_dir}/pages_chunked_emb_train.json"
+    relevant_path = f"{embed_dir}/relevant_chunks_emb_train.json"
+    cosine_sim_path = f"{cos_sim_dir}/cosine_sim_rank_threshold_only_single.json"
+
+    data = Data(pages_path, relevant_path, cosine_sim_path, device)
     data.load_pages()
     data.load_relevant()
     data.load_cosine_sim()
 
-    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 0.6)
+    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, cfg.training.train_split)
 
-    pages_path_test = f"data_3_embed/pages_chunked_emb_test.json"
-    relevant_path_test = f"data_3_embed/relevant_chunks_emb_test.json"
+    pages_path_test = f"{embed_dir}/pages_chunked_emb_test.json"
+    relevant_path_test = f"{embed_dir}/relevant_chunks_emb_test.json"
 
-    data_test = Data(pages_path_test, relevant_path_test)
+    data_test = Data(pages_path_test, relevant_path_test, device=device)
     data_test.load_pages()
     data_test.load_relevant()
 
@@ -212,7 +219,8 @@ def cos_sim():
 
 
     # Evaluate on training set with optimal threshold
-    optimal_threshold = find_optimal_threshold(data, train_set, device, (0.76, 0.86), do_roc=True)
+    threshold_range = tuple(cs.threshold_range)
+    optimal_threshold = find_optimal_threshold(data, train_set, device, threshold_range, do_roc=True)
     
     # Evaluate on validation set with optimal threshold
     print(f"\n=== Validation Set Results (Threshold: {optimal_threshold:.3f}) ===")
@@ -222,7 +230,7 @@ def cos_sim():
     print(f"F1 Score: {val_f1:.4f}")
     
     # Find optimal threshold using full training data
-    optimal_threshold = find_optimal_threshold(data, data.query_ids, device, (0.76, 0.86))
+    optimal_threshold = find_optimal_threshold(data, data.query_ids, device, threshold_range)
 
     # Evaluate on test set with optimal threshold
     print(f"\n=== Test Set Results (Threshold: {optimal_threshold:.3f}) ===")
@@ -232,13 +240,10 @@ def cos_sim():
     print(f"F1 Score: {train_f1:.4f}")
     
     # Get rankings for all queries using a threshold
-    top_k = 40 # max rank size
-    threshold = 0.77 # min similarity
-    all_rankings_train = get_rankings_with_threshold(data, data.query_ids, threshold, device, top_k,n_examples)
-    all_rankings_test = get_rankings_with_threshold(data_test, data_test.query_ids, threshold, device, top_k,n_examples)
+    all_rankings_train = get_rankings_with_threshold(data, data.query_ids, cs.threshold, device, cs.top_k, n_examples)
+    all_rankings_test = get_rankings_with_threshold(data_test, data_test.query_ids, cs.threshold, device, cs.top_k, n_examples)
 
-    output_dir = "data_4_cos_sim"
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(cos_sim_dir, exist_ok=True)
 
     # Save train set rankings for RL model train and inference
     # output_file = os.path.join(output_dir, f"cosine_sim_rank_threshold_only_single_train.json")

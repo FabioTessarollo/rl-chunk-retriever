@@ -2,6 +2,7 @@ import os
 import json
 from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
+from config import get_config
 
 def embed_pages(input_path, output_path, model):
     with open(input_path, 'r', encoding='utf-8') as f:
@@ -38,17 +39,22 @@ def embed_relevant(input_path, output_path, model):
         json.dump(rels, f)
 
 
-def embed(set):
+def embed(dataset, cfg=None):
+    if cfg is None:
+        cfg = get_config()
+
+    chunk_dir = cfg.data.chunk_dir
+    embed_dir = cfg.data.embed_dir
 
     # input
-    pages_in = f'data_2_chunk_and_label/pages_chunked_{set}.json'
-    rels_in = f'data_2_chunk_and_label/relevant_chunks_{set}.json'
+    pages_in = f'{chunk_dir}/pages_chunked_{dataset}.json'
+    rels_in = f'{chunk_dir}/relevant_chunks_{dataset}.json'
 
     # output
-    pages_out = f'data_3_embed/pages_chunked_emb_{set}.json'
-    rels_out = f'data_3_embed/relevant_chunks_emb_{set}.json'
+    pages_out = f'{embed_dir}/pages_chunked_emb_{dataset}.json'
+    rels_out = f'{embed_dir}/relevant_chunks_emb_{dataset}.json'
 
-    model_name = 'intfloat/e5-base-v2'
+    model_name = cfg.etl.embedding_model
     print(f'Loading model {model_name}...')
     model = SentenceTransformer(model_name) # this is already doing L2 Norm
 

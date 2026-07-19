@@ -17,13 +17,12 @@ from retrieval.Topic import Topic
 from retrieval.DuelingDQN import DuelingDQN
 from retrieval.ReplayBuffer import PrioritizedReplayBuffer
 from retrieval.EarlyStopping import EarlyStopping
+from config import get_config, get_device, set_seed
 
 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-random.seed(1)
-torch.manual_seed(1)
 
 
-def evaluate(data, query_ids, online_net, device, max_exp_loops, history, epoch):
+def evaluate(data, query_ids, online_net, device, max_exp_loops, history, epoch, reward_cfg=None):
     """Evaluate the model on validation set without training"""
     val_reward = 0
     val_f1_score = 0
@@ -43,7 +42,7 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops, history, epoch)
 
         logging.info(f"Query: {query_desc}")
 
-        topic = Topic(query_emb, page, ranked_chunks, relevant_chunks, max_exp_loops)
+        topic = Topic(query_emb, page, ranked_chunks, relevant_chunks, max_exp_loops, device, reward_cfg)
 
         state_emb, state_meta, _, _ = topic.get_initial_step()
         state_emb = state_emb.to(device)
@@ -113,68 +112,51 @@ def evaluate(data, query_ids, online_net, device, max_exp_loops, history, epoch)
 
     return avg_val_reward, avg_val_f1_score, avg_val_recall, avg_val_precision, history, probs
 
-def train():
+def train(cfg=None):
+    if cfg is None:
+        cfg = get_config()
 
-    pages_path = "data_3_embed/pages_chunked_emb_train.json"
-    relevant_path = "data_3_embed/relevant_chunks_emb_train.json"
-    cosine_sim_path = "data_4_cos_sim/cosine_sim_rank_threshold_only_single_train.json" #_train
+    set_seed(cfg)
+    device = get_device(cfg)
+    print(f"Using device: {device}")
 
-    data = Data(pages_path, relevant_path, cosine_sim_path)
+    embed_dir = cfg.data.embed_dir
+    cos_sim_dir = cfg.data.cos_sim_dir
+    t = cfg.training
+    reward_cfg = cfg.retrieval.reward
+
+    pages_path = f"{embed_dir}/pages_chunked_emb_train.json"
+    relevant_path = f"{embed_dir}/relevant_chunks_emb_train.json"
+    cosine_sim_path = f"{cos_sim_dir}/cosine_sim_rank_threshold_only_single_train.json"
+
+    data = Data(pages_path, relevant_path, cosine_sim_path, device)
     data.load_pages()
     data.load_relevant()
     data.load_cosine_sim()
 
-    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, 0.6)
-
-    #full_set, _ = data.balanced_split_query_ids(data.query_ids, 1)
+    train_set, validation_set = data.balanced_split_query_ids(data.query_ids, t.train_split)
 
     best_score = 0
-    metadata_dim = 6
-    epsilon = 1.0
+    epsilon = t.epsilon
 
-
-    proj_dim = 512
-    gamma = 0.99
-    epsilon_min = 0.1
-    epsilon_decay = 0.99995
-    batch_size = 32
-    replay_capacity = 30000
-    lr = 3e-5
-    target_update = 4000 ############### PROVARE A DIMINUIRE
-    epochs = 30# 31 #24
-    max_exp_loops = 1
-    action_dim = 5
-    dropout_p = 0
-    scheduler_type = "cosine"
-    per_alpha = 0.6
-    per_beta = 0.4
-    per_beta_increment = 0.001
-    eta_min = 3e-6
-    warm_up_epoches = 20
-    neg_schedule = torch.linspace(0.30, 0.50, steps=50)
-    #neg_schedule = torch.linspace(0.20, 0.50, steps=20)
+    neg_schedule = torch.linspace(t.neg_schedule_start, t.neg_schedule_end, steps=t.neg_schedule_steps)
     probs = []
     history = []
 
+    es = EarlyStopping(patience=t.early_stopping_patience, delta_ratio=t.early_stopping_delta)
 
-    es = EarlyStopping(patience=10, delta_ratio=0.001) #12? #15? #10?
-
-    # Set device
-    device = torch.device("mps")
-    print(f"Using device: {device}")
-
-    online_net = DuelingDQN(metadata_dim, action_dim, proj_dim, dropout_p).to(device)
-    target_net = DuelingDQN(metadata_dim, action_dim, proj_dim, dropout_p).to(device)
+    online_net = DuelingDQN(t.metadata_dim, t.action_dim, t.proj_dim, t.dropout, cfg.model.embedding_dim).to(device)
+    target_net = DuelingDQN(t.metadata_dim, t.action_dim, t.proj_dim, t.dropout, cfg.model.embedding_dim).to(device)
     target_net.load_state_dict(online_net.state_dict())
-    optimizer = optim.Adam(online_net.parameters(), lr=lr, weight_decay=1e-4)
+    optimizer = optim.Adam(online_net.parameters(), lr=t.lr, weight_decay=t.weight_decay)
 
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=40, eta_min=eta_min)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t.scheduler_t_max, eta_min=t.eta_min)
 
     replay = PrioritizedReplayBuffer(
-        capacity=replay_capacity,
-        alpha=per_alpha,
-        beta=per_beta,
-        beta_increment=per_beta_increment
+        capacity=t.replay_capacity,
+        alpha=t.per_alpha,
+        beta=t.per_beta,
+        beta_increment=t.per_beta_increment
     )
 
     logging.basicConfig(filename='rl_training.log', level=logging.INFO, format='%(asctime)s - %(message)s', filemode="w")
@@ -190,7 +172,7 @@ def train():
     val_rewards = []
     train_recalls = []
     val_recalls = []
-    for epoch in range(epochs):
+    for epoch in range(t.epochs):
         online_net.train()
         epoch_reward = 0
         epoch_f1_score = 0
@@ -201,7 +183,7 @@ def train():
         print(f"Current Learning Rate: {current_lr:.6f}")
         logging.info(f"Epoch {epoch} - Learning Rate: {current_lr:.6f}")
 
-        if epoch < warm_up_epoches:
+        if epoch < t.warm_up_epochs:
             p = neg_schedule[epoch].item()
 
         print(f"Epoch: {epoch}")
@@ -224,7 +206,7 @@ def train():
 
             logging.info(f"Epoch: {epoch}, Query: {query_desc}")
 
-            topic = Topic(query_emb, page, ranked_chunks, relevant_chunks, max_exp_loops)
+            topic = Topic(query_emb, page, ranked_chunks, relevant_chunks, t.max_exp_loops, device, reward_cfg)
 
             state_emb, state_meta, _, _ = topic.get_initial_step()
             state_emb = state_emb.to(device)
@@ -239,9 +221,9 @@ def train():
                 step_count += 1
                 if random.random() < epsilon:
                     if probs:
-                        action = random.choices(range(action_dim), weights=probs, k=1)[0]
+                        action = random.choices(range(t.action_dim), weights=probs, k=1)[0]
                     else:
-                        action = random.randint(0, action_dim - 1)
+                        action = random.randint(0, t.action_dim - 1)
                 else:
                     with torch.no_grad():
                         q = online_net(state_emb.unsqueeze(0), state_meta.unsqueeze(0))
@@ -273,9 +255,9 @@ def train():
 
                 state_emb, state_meta = next_emb, next_meta
 
-                if len(replay) > batch_size:
+                if len(replay) > t.batch_size:
                     # Sample from PER buffer
-                    batch, idxs, is_weights = replay.sample(batch_size)
+                    batch, idxs, is_weights = replay.sample(t.batch_size)
 
                     state_embs, state_metas, actions, rewards, next_embs, next_metas, dones = zip(*batch)
                     state_embs = torch.stack(state_embs).to(device)
@@ -294,7 +276,7 @@ def train():
                         # Double DQN: use online network to select actions, target network to evaluate
                         next_actions = online_net(next_embs, next_metas).argmax(1)
                         next_q = target_net(next_embs, next_metas).gather(1, next_actions.unsqueeze(1)).squeeze(1)
-                        targets = rewards + gamma * next_q * (1 - dones)
+                        targets = rewards + t.gamma * next_q * (1 - dones)
 
                     # Compute TD errors for priority updates
                     td_errors = (q_values - targets).detach().cpu().numpy()
@@ -310,7 +292,7 @@ def train():
                     # Update priorities in replay buffer
                     replay.update_priorities(idxs, td_errors)
 
-                if step_count % target_update == 0:
+                if step_count % t.target_update == 0:
                     target_net.load_state_dict(online_net.state_dict())
                     logging.info(f"Target network updated at global step {step_count}")
 
@@ -318,8 +300,8 @@ def train():
             epoch_f1_score += topic.f1_score
             logging.info(f"Episode Reward: {episode_reward:.4f}, Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Relevant: {topic.relevant_chunks}")
 
-            if epsilon > epsilon_min:
-                epsilon *= epsilon_decay
+            if epsilon > t.epsilon_min:
+                epsilon *= t.epsilon_decay
 
         avg_epoch_reward = epoch_reward / len(train_set)
         avg_epoch_f1_score = epoch_f1_score / len(train_set)
@@ -334,7 +316,7 @@ def train():
 
         avg_train_reward, avg_train_f1_score, recall_train, precision_train, _, _ = evaluate(
             data, train_set, online_net, device,
-            max_exp_loops, history, epoch
+            t.max_exp_loops, history, epoch, reward_cfg
         )
         logging.info(f"GREEDY: Train Reward: {avg_train_reward:.4f}, Val F1: {avg_train_f1_score:.4f}")
         print(f"GREEDY: Train - Reward: {avg_train_reward:.4f}, F1: {avg_train_f1_score:.4f}, Recall {recall_train:.4f}, Precision {precision_train:.4f}")
@@ -344,7 +326,7 @@ def train():
 
         avg_val_reward, avg_val_f1_score, recall_val, precision_val, history, _ = evaluate(
             data, validation_set, online_net, device,
-            max_exp_loops, history, epoch
+            t.max_exp_loops, history, epoch, reward_cfg
         )
         logging.info(f"GREEDY: Val Reward: {avg_val_reward:.4f}, Val F1: {avg_val_f1_score:.4f}")
         print(f"GREEDY: Validation - Reward: {avg_val_reward:.4f}, F1: {avg_val_f1_score:.4f}, Recall {recall_val:.4f}, Precision {precision_val:.4f}")
@@ -354,12 +336,12 @@ def train():
 
         _, _, _, _, _, probs = evaluate(
             data, random.sample(train_set, 50), online_net, device,
-            max_exp_loops, history, epoch
+            t.max_exp_loops, history, epoch, reward_cfg
         )
 
 
 
-    extra_logger.info(f"{now_str}\t{proj_dim}\t{gamma}\t{epsilon_min}\t{epsilon_decay}\t{batch_size}\t{replay_capacity}\t{lr}\t{target_update}\t{epochs}\t{max_exp_loops}\t{action_dim}\t{scheduler_type}\t{per_alpha}\t{per_beta}\t{per_beta_increment}\t{dropout_p}\t{best_score:.4f}")
+    extra_logger.info(f"{now_str}\t{t.proj_dim}\t{t.gamma}\t{t.epsilon_min}\t{t.epsilon_decay}\t{t.batch_size}\t{t.replay_capacity}\t{t.lr}\t{t.target_update}\t{t.epochs}\t{t.max_exp_loops}\t{t.action_dim}\tcosine\t{t.per_alpha}\t{t.per_beta}\t{t.per_beta_increment}\t{t.dropout}\t{best_score:.4f}")
 
     plt.figure(figsize=(7,5))
     plt.plot(train_f1_scores, label='train')

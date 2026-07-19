@@ -6,12 +6,12 @@ from collections import defaultdict
 
 class Data:
 
-    def __init__(self, pages_path, relevant_path, cosine_sim_rank_path = None):
+    def __init__(self, pages_path, relevant_path, cosine_sim_rank_path = None, device = None):
         self.pages_path = pages_path
         self.relevant_path = relevant_path
         self.cosine_sim_rank = None
         self.cosine_sim_rank_path = cosine_sim_rank_path
-        self.device = torch.device("mps")
+        self.device = device if device is not None else torch.device("cpu")
         self.cosine_sim_rank_wb = {}
 
     def load_pages(self):

@@ -2,6 +2,7 @@ import json
 import re
 import os
 from collections import defaultdict
+from config import get_config
 
 def chunk_text(text, chunk_size=100):
     # Split text into words and keep track of char spans
@@ -108,16 +109,22 @@ def process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chu
     with open(relevant_out_path, 'w', encoding='utf-8') as out:
         json.dump(relevant_output, out, ensure_ascii=False, indent=2)
 
-def chunk_and_label(set, chunk_size = 50):
-    
+def chunk_and_label(dataset, cfg=None):
+    if cfg is None:
+        cfg = get_config()
+
+    chunk_size = cfg.etl.chunk_size
+    extract_dir = cfg.data.extract_dir
+    chunk_dir = cfg.data.chunk_dir
+
     # input
-    pages_path = f"data_1_extract/pages_{set}.jsonl"
-    relevant_path = f"data_1_extract/relevant_paragraphs_{set}.jsonl"
+    pages_path = f"{extract_dir}/pages_{dataset}.jsonl"
+    relevant_path = f"{extract_dir}/relevant_paragraphs_{dataset}.jsonl"
 
     # output
-    pages_out_path = f'data_2_chunk_and_label/pages_chunked_{set}.json'
-    relevant_out_path = f'data_2_chunk_and_label/relevant_chunks_{set}.json'
+    pages_out_path = f'{chunk_dir}/pages_chunked_{dataset}.json'
+    relevant_out_path = f'{chunk_dir}/relevant_chunks_{dataset}.json'
 
-    os.makedirs('data_2_chunk_and_label', exist_ok=True)
+    os.makedirs(chunk_dir, exist_ok=True)
     pages_text_map, pages_chunks_map = process_pages(pages_path, pages_out_path, chunk_size)
     process_relevant(relevant_path, relevant_out_path, pages_text_map, pages_chunks_map, chunk_size)

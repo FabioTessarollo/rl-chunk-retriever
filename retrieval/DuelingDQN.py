@@ -7,14 +7,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class DuelingDQN(nn.Module):
-    def __init__(self, metadata_dim, action_dim, proj_dim=256, dropout_p=0.0):
+    def __init__(self, metadata_dim, action_dim, proj_dim=256, dropout_p=0.0, embedding_dim=768):
         super(DuelingDQN, self).__init__()
+        self.embedding_dim = embedding_dim
 
-        self.single_proj = nn.Linear(768, proj_dim)
-        self.double_proj = nn.Linear(768*2, proj_dim)
-        self.prev_double_proj = nn.Linear(768*2, proj_dim)
-        self.query_proj = nn.Linear(768, proj_dim)
-        self.bag_proj   = nn.Linear(768, proj_dim)
+        self.single_proj = nn.Linear(embedding_dim, proj_dim)
+        self.double_proj = nn.Linear(embedding_dim*2, proj_dim)
+        self.prev_double_proj = nn.Linear(embedding_dim*2, proj_dim)
+        self.query_proj = nn.Linear(embedding_dim, proj_dim)
+        self.bag_proj   = nn.Linear(embedding_dim, proj_dim)
 
         combined_dim = 5 * proj_dim 
 
@@ -33,7 +34,7 @@ class DuelingDQN(nn.Module):
 
     def forward(self, state_embedding, state_metadata, return_streams=False):
         # split concatenated embeddings
-        current, next, prev, query, bag = torch.split(state_embedding, 768, dim=-1)
+        current, next, prev, query, bag = torch.split(state_embedding, self.embedding_dim, dim=-1)
         current_and_next = torch.cat([current, next], dim=-1)
         current_and_prev = torch.cat([prev, current], dim=-1)
 
