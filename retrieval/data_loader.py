@@ -1,12 +1,15 @@
 import json
+import logging
 import torch
 import random
 from statistics import mean
 from collections import defaultdict
 
+logger = logging.getLogger(__name__)
+
 class Data:
 
-    def __init__(self, pages_path, relevant_path, cosine_sim_rank_path = None, device = None):
+    def __init__(self, pages_path: str, relevant_path: str, cosine_sim_rank_path: str | None = None, device: torch.device | None = None):
         self.pages_path = pages_path
         self.relevant_path = relevant_path
         self.cosine_sim_rank = None
@@ -14,23 +17,23 @@ class Data:
         self.device = device if device is not None else torch.device("cpu")
         self.cosine_sim_rank_wb = {}
 
-    def load_pages(self):
+    def load_pages(self) -> None:
         with open(self.pages_path, 'r', encoding='utf-8') as f:
             self.pages = json.load(f)
             self.pages_ids = [page['page_id'] for page in self.pages]
 
-    def load_relevant(self):
+    def load_relevant(self) -> None:
         with open(self.relevant_path, 'r', encoding='utf-8') as f:
             self.relevant = json.load(f)
             self.query_ids = [query['query_id'] for query in self.relevant]
 
-    def load_cosine_sim(self):
+    def load_cosine_sim(self) -> None:
         with open(self.cosine_sim_rank_path, 'r', encoding='utf-8') as f:
             self.cosine_sim_rank = json.load(f)
-            print(f"Number of entries: {len(self.cosine_sim_rank) if isinstance(self.cosine_sim_rank, dict) else 'N/A'}")
+            logger.info(f"Number of entries: {len(self.cosine_sim_rank) if isinstance(self.cosine_sim_rank, dict) else 'N/A'}")
             self.cosine_sim_rank = {k: v['relevant_chunks'] for k, v in self.cosine_sim_rank.items() if v}
 
-    def get_ranked_with_prev_chunks_from_query_id(self, query_id):
+    def get_ranked_with_prev_chunks_from_query_id(self, query_id: int) -> list[int]:
         ranked_chunks = self.cosine_sim_rank[str(query_id)]
         addtional_chunks = []
         for n in ranked_chunks:
@@ -40,22 +43,22 @@ class Data:
         ranked_chunks.extend(addtional_chunks)
         return ranked_chunks
     
-    def get_avg_sim(self, query_id):
+    def get_avg_sim(self, query_id: int) -> float:
         with open(self.cosine_sim_rank_path, 'r', encoding='utf-8') as f:
             json_data = json.load(f)
             return json_data[str(query_id)]["avg_similarity"]
 
-    def get_page_chunks_dict(self, page_id):
+    def get_page_chunks_dict(self, page_id: str) -> dict[int, torch.Tensor]:
         page = next((page for page in self.pages if page["page_id"] == page_id), None)
         if page:
             page_obj = {chunk["chunk_id"]: torch.tensor(chunk["embedding"], device=self.device) for chunk in page.get("chunks", [])}
             return page_obj
         return {}
 
-    def get_query_obj_from_id(self, query_id):
+    def get_query_obj_from_id(self, query_id: int) -> dict | None:
         return next((query for query in self.relevant if query["query_id"] == query_id), None)
     
-    def get_query_ids_by_difficulty(self):
+    def get_query_ids_by_difficulty(self) -> tuple[list[int], list[int]]:
         fair_query_ids = []
         difficult_query_ids = []
         for q in self.query_ids:
@@ -66,10 +69,10 @@ class Data:
                 fair_query_ids.append(q)
             else:
                 difficult_query_ids.append(q)
-        print(f"Count of fair queries: {len(fair_query_ids)}")
+        logger.info(f"Count of fair queries: {len(fair_query_ids)}")
         return fair_query_ids, difficult_query_ids
     
-    def split_query_ids(self, query_ids, first_split_ratio):
+    def split_query_ids(self, query_ids: list[int], first_split_ratio: float) -> tuple[list[int], list[int]]:
 
         random.seed(1)
 
@@ -105,7 +108,7 @@ class Data:
 
         return first_set, second_set
         
-    def balanced_split_query_ids(self, query_ids, first_split_ratio):
+    def balanced_split_query_ids(self, query_ids: list[int], first_split_ratio: float) -> tuple[list[int], list[int]]:
         first_set = []
         second_set = []
         pages = {}
@@ -183,7 +186,7 @@ class Data:
 
         return first_set, second_set
 
-    def get_full_set(self):
+    def get_full_set(self) -> dict[str, list[int]]:
 
         pages = {}
 

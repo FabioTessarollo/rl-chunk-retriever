@@ -7,14 +7,15 @@ import logging
 from datetime import datetime
 import numpy as np
 
-from retrieval.Data import Data
-from retrieval.Topic import Topic
-from retrieval.DuelingDQN import DuelingDQN
-from retrieval.ReplayBuffer import PrioritizedReplayBuffer
+from retrieval.data_loader import Data
+from retrieval.environment import Topic
+from retrieval.dueling_dqn import DuelingDQN
+from retrieval.replay_buffer import PrioritizedReplayBuffer
 from retrieval.evaluate import evaluate
 from retrieval.plotting import plot_train_val_metric, plot_action_counts
 from config import get_config, get_device, set_seed
 
+logger = logging.getLogger(__name__)
 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -24,7 +25,7 @@ def train(cfg=None):
 
     set_seed(cfg)
     device = get_device(cfg)
-    print(f"Using device: {device}")
+    logger.info(f"Using device: {device}")
 
     embed_dir = cfg.data.embed_dir
     cos_sim_dir = cfg.data.cos_sim_dir
@@ -62,7 +63,6 @@ def train(cfg=None):
         beta_increment=t.per_beta_increment
     )
 
-    logging.basicConfig(filename='rl_training.log', level=logging.INFO, format='%(asctime)s - %(message)s', filemode="w")
     extra_logger = logging.getLogger("extra")
     extra_handler = logging.FileHandler("hyperparameters.csv", mode="a")
     extra_logger.addHandler(extra_handler)
@@ -83,13 +83,12 @@ def train(cfg=None):
 
         # Log current learning rate
         current_lr = optimizer.param_groups[0]['lr']
-        print(f"Current Learning Rate: {current_lr:.6f}")
-        logging.info(f"Epoch {epoch} - Learning Rate: {current_lr:.6f}")
+        logger.info(f"Epoch {epoch} - Learning Rate: {current_lr:.6f}")
 
         if epoch < t.warm_up_epochs:
             p = neg_schedule[epoch].item()
 
-        print(f"Epoch: {epoch}")
+        logger.info(f"Epoch: {epoch}")
         for query_id in train_set:
             query = data.get_query_obj_from_id(query_id)
             page_id = query.get("page_id")
@@ -197,8 +196,7 @@ def train(cfg=None):
         avg_epoch_reward = epoch_reward / len(train_set)
         avg_epoch_f1_score = epoch_f1_score / len(train_set)
 
-        logging.info(f"Epoch: {epoch}, Average Reward: {avg_epoch_reward:.4f}, Average F1: {avg_epoch_f1_score:.4f}, Epsilon: {epsilon:.4f}")
-        print(f"Average Reward: {avg_epoch_reward:.4f}, Average F1: {avg_epoch_f1_score:.4f}")
+        logger.info(f"Epoch: {epoch}, Average Reward: {avg_epoch_reward:.4f}, Average F1: {avg_epoch_f1_score:.4f}, Epsilon: {epsilon:.4f}")
 
         scheduler.step()
 
@@ -210,8 +208,7 @@ def train(cfg=None):
             t.max_exp_loops, reward_cfg=reward_cfg, track_actions=True,
             history=history, epoch=epoch
         )
-        logging.info(f"GREEDY: Train Reward: {train_result.avg_reward:.4f}, Val F1: {train_result.avg_f1:.4f}")
-        print(f"GREEDY: Train - Reward: {train_result.avg_reward:.4f}, F1: {train_result.avg_f1:.4f}, Recall {train_result.avg_recall:.4f}, Precision {train_result.avg_precision:.4f}")
+        logger.info(f"GREEDY: Train - Reward: {train_result.avg_reward:.4f}, F1: {train_result.avg_f1:.4f}, Recall {train_result.avg_recall:.4f}, Precision {train_result.avg_precision:.4f}")
         train_f1_scores.append(train_result.avg_f1)
         train_rewards.append(train_result.avg_reward)
         train_recalls.append(train_result.avg_recall)
@@ -221,8 +218,7 @@ def train(cfg=None):
             t.max_exp_loops, reward_cfg=reward_cfg, track_actions=True,
             history=history, epoch=epoch
         )
-        logging.info(f"GREEDY: Val Reward: {val_result.avg_reward:.4f}, Val F1: {val_result.avg_f1:.4f}")
-        print(f"GREEDY: Validation - Reward: {val_result.avg_reward:.4f}, F1: {val_result.avg_f1:.4f}, Recall {val_result.avg_recall:.4f}, Precision {val_result.avg_precision:.4f}")
+        logger.info(f"GREEDY: Val - Reward: {val_result.avg_reward:.4f}, F1: {val_result.avg_f1:.4f}, Recall {val_result.avg_recall:.4f}, Precision {val_result.avg_precision:.4f}")
         val_f1_scores.append(val_result.avg_f1)
         val_rewards.append(val_result.avg_reward)
         val_recalls.append(val_result.avg_recall)

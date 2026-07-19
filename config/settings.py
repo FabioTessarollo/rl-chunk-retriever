@@ -1,3 +1,4 @@
+import logging
 import os
 import random
 import yaml
@@ -50,3 +51,33 @@ def set_seed(cfg: Config) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+
+
+def setup_logging(level: str = "INFO", log_file: str | None = None) -> None:
+    """Configure root logger with console and optional file handler."""
+    log_level = getattr(logging, level.upper(), logging.INFO)
+
+    root = logging.getLogger()
+    root.setLevel(log_level)
+
+    # Remove existing handlers to avoid duplicates on re-init
+    root.handlers.clear()
+
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                            datefmt="%Y-%m-%d %H:%M:%S")
+
+    console = logging.StreamHandler()
+    console.setLevel(log_level)
+    console.setFormatter(fmt)
+    root.addHandler(console)
+
+    if log_file:
+        os.makedirs(os.path.dirname(log_file) or ".", exist_ok=True)
+        fh = logging.FileHandler(log_file, mode="w")
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(fmt)
+        root.addHandler(fh)
+
+    # Suppress noisy third-party loggers
+    for name in ("transformers", "sentence_transformers", "matplotlib", "PIL"):
+        logging.getLogger(name).setLevel(logging.WARNING)

@@ -1,13 +1,16 @@
+import logging
 import random
 import json
 import os
 import numpy as np
 import torch
-from retrieval.Data import Data
+from retrieval.data_loader import Data
 from sklearn.metrics.pairwise import cosine_similarity
 import matplotlib.pyplot as plt
 from sklearn.metrics import auc
 from config import get_config, get_device
+
+logger = logging.getLogger(__name__)
 
 def get_cosine_sim(v1, v2):
     similarity = torch.nn.functional.cosine_similarity(v1.unsqueeze(0), v2.unsqueeze(0))
@@ -92,7 +95,7 @@ def find_optimal_threshold(data, training_query_ids, device, threshold_range=(0.
     best_threshold = 0.0
     best_f1_score = 0.0
     
-    print("Finding optimal threshold on training data...")
+    logger.info("Finding optimal threshold on training data...")
     thresholds = np.concatenate(([0], np.arange(threshold_range[0], threshold_range[1] + step, step), [1]))
     roc_points = []
     
@@ -103,7 +106,7 @@ def find_optimal_threshold(data, training_query_ids, device, threshold_range=(0.
             best_f1_score = f1_score
             best_threshold = threshold
         
-        print(f"Threshold: {threshold:.3f}, F1: {f1_score:.4f}")
+        logger.info(f"Threshold: {threshold:.3f}, F1: {f1_score:.4f}")
 
         # ROC
         tp, fp, fn, tn = per_chunk_stats["tp"], per_chunk_stats["fp"], \
@@ -140,7 +143,7 @@ def find_optimal_threshold(data, training_query_ids, device, threshold_range=(0.
         plt.tight_layout()
         plt.savefig('ROC-AUC.png')
     
-    print(f"\nBest threshold: {best_threshold:.3f} with F1: {best_f1_score:.4f}")
+    logger.info(f"Best threshold: {best_threshold:.3f} with F1: {best_f1_score:.4f}")
     return best_threshold
 
 def get_rankings_with_threshold(data, query_ids, threshold, device, top_k, n_examples=2):
@@ -179,12 +182,12 @@ def get_rankings_with_threshold(data, query_ids, threshold, device, top_k, n_exa
             selected_chunk_ids = {chunk_id for chunk_id, _ in top_chunks.items()}
             num_relevant_retrieved = len(selected_chunk_ids & relevant_chunks)
             
-            print(f"\nExample for Query ID: {query_id}")
-            print(f"Query Description: {query_desc}")
-            print(f"Threshold: {threshold:.3f}")
-            print(f"Relevant chunks: {sorted(list(relevant_chunks))}")
-            print(f"Retrieved chunks: {[chunk_id for chunk_id, _ in top_chunks.items()]}")
-            print(f"Relevant retrieved: {num_relevant_retrieved}/{len(relevant_chunks)}")
+            logger.info(f"Example for Query ID: {query_id}")
+            logger.info(f"Query Description: {query_desc}")
+            logger.info(f"Threshold: {threshold:.3f}")
+            logger.info(f"Relevant chunks: {sorted(list(relevant_chunks))}")
+            logger.info(f"Retrieved chunks: {[chunk_id for chunk_id, _ in top_chunks.items()]}")
+            logger.info(f"Relevant retrieved: {num_relevant_retrieved}/{len(relevant_chunks)}")
     
     return rankings
 
@@ -223,21 +226,21 @@ def cos_sim(cfg=None):
     optimal_threshold = find_optimal_threshold(data, train_set, device, threshold_range, do_roc=True)
     
     # Evaluate on validation set with optimal threshold
-    print(f"\n=== Validation Set Results (Threshold: {optimal_threshold:.3f}) ===")
+    logger.info(f"Validation Set Results (Threshold: {optimal_threshold:.3f})")
     val_recall, val_precision, val_f1, _, _= evaluate_with_threshold(data, validation_set, optimal_threshold, device)
-    print(f"Recall: {val_recall:.4f}")
-    print(f"Precision: {val_precision:.4f}")
-    print(f"F1 Score: {val_f1:.4f}")
+    logger.info(f"Recall: {val_recall:.4f}")
+    logger.info(f"Precision: {val_precision:.4f}")
+    logger.info(f"F1 Score: {val_f1:.4f}")
     
     # Find optimal threshold using full training data
     optimal_threshold = find_optimal_threshold(data, data.query_ids, device, threshold_range)
 
     # Evaluate on test set with optimal threshold
-    print(f"\n=== Test Set Results (Threshold: {optimal_threshold:.3f}) ===")
+    logger.info(f"Test Set Results (Threshold: {optimal_threshold:.3f})")
     train_recall, train_precision, train_f1, cosine_sim_results, _ = evaluate_with_threshold(data_test, data_test.query_ids, optimal_threshold, device)
-    print(f"Recall: {train_recall:.4f}")
-    print(f"Precision: {train_precision:.4f}")
-    print(f"F1 Score: {train_f1:.4f}")
+    logger.info(f"Recall: {train_recall:.4f}")
+    logger.info(f"Precision: {train_precision:.4f}")
+    logger.info(f"F1 Score: {train_f1:.4f}")
     
     # Get rankings for all queries using a threshold
     all_rankings_train = get_rankings_with_threshold(data, data.query_ids, cs.threshold, device, cs.top_k, n_examples)

@@ -1,8 +1,12 @@
+from __future__ import annotations
 import torch
 
 class Topic:
 
-    def __init__(self, query_emb, page_chunks_dict, ranked_chunks, relevant_chunks, max_exp_loops, device=None, reward_cfg=None):
+    def __init__(self, query_emb: torch.Tensor, page_chunks_dict: dict[int, torch.Tensor],
+                 ranked_chunks: list[int], relevant_chunks: list[int],
+                 max_exp_loops: int, device: torch.device | None = None,
+                 reward_cfg=None):
         self.current_rank_chunk = 0 # rank position of the current chunk - to navigate the rank
         self.current_chunk_id = 0 # chunk id value of the current chunk - to navigate the page
         self.query_emb = query_emb
@@ -56,7 +60,7 @@ class Topic:
         sim = torch.exp(-distance / 1.0)
         return sim
 
-    def get_state_metadata(self):
+    def get_state_metadata(self) -> torch.Tensor:
         rank_position = (self.current_rank_chunk + 1)  / len(self.ranked_chunks)
         bag_size = len(self.bag_of_chunks) / len(self.ranked_chunks)
         sq_sim = self.cos_sim_norm(self.curr_chunk_emb, self.query_emb)
@@ -66,7 +70,7 @@ class Topic:
         state_metadata = torch.tensor([rank_position, bag_size, sq_sim, dq_sim, bq_sim, pdq_sim], device = self.device)
         return state_metadata
 
-    def get_initial_step(self):
+    def get_initial_step(self) -> tuple[torch.Tensor, torch.Tensor, int, bool]:
         self.current_chunk_id = self.ranked_chunks[0]
         state_embedding = self.get_state_embedding()
         state_metadata = self.get_state_metadata()
@@ -83,7 +87,7 @@ class Topic:
 
         self.f1_score = (2 * self.precision * self.recall) / (self.precision + self.recall) if (self.precision + self.recall) > 0 else 0
 
-    def get_state_embedding(self):
+    def get_state_embedding(self) -> torch.Tensor:
 
         # get current chunk id embedding
         self.curr_chunk_emb = self.page_chunks_dict.get(self.current_chunk_id)
@@ -115,7 +119,7 @@ class Topic:
         reward = (raw_reward * 3 + self.reward_f1) / 4
         return (state_embedding, state_metadata, reward, self.done, self.truncated)
 
-    def step(self, action):
+    def step(self, action: int) -> tuple[torch.Tensor, torch.Tensor, float, bool, bool]:
         dispatch = [self.skip, self.take_single, self.take_double, self.take_prev_double, self.take_triple]
         return dispatch[action]()
 

@@ -1,10 +1,13 @@
 import json
+import logging
 import os
 from collections import defaultdict
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
 from config import get_config
+
+logger = logging.getLogger(__name__)
 
 
 def _get_paths(cfg):
@@ -246,36 +249,36 @@ def process_all_queries(final_data, completeness_threshold, topk, return_avg_sco
     if return_avg_scores:
         return rl_f1_avg, rl_rec_avg, rl_precision_avg, cs_f1_avg, cs_rec_avg, cs_precision_avg
 
-    print(f"\nProcessing Complete!")
-    print(f"Total queries: {len(final_data)}")
-    print(f"Queries retained: {len(filtered_results)}")
-    print(f"Queries dropped: {len(final_data) - len(filtered_results)}")
+    logger.info(f"Processing Complete!")
+    logger.info(f"Total queries: {len(final_data)}")
+    logger.info(f"Queries retained: {len(filtered_results)}")
+    logger.info(f"Queries dropped: {len(final_data) - len(filtered_results)}")
 
     # RL Metrics
-    print(f"\n--- RL Model Metrics ---")
-    print(f"Average RL F1 Score:      {rl_f1_avg:.4f}")
-    print(f"Average RL Recall (TPR):  {rl_rec_avg:.4f}")
-    print(f"Average RL Precision:     {rl_precision_avg:.4f}")
-    print(f"Average RL FPR:           {rl_fpr_avg:.4f}")
+    logger.info(f"--- RL Model Metrics ---")
+    logger.info(f"Average RL F1 Score:      {rl_f1_avg:.4f}")
+    logger.info(f"Average RL Recall (TPR):  {rl_rec_avg:.4f}")
+    logger.info(f"Average RL Precision:     {rl_precision_avg:.4f}")
+    logger.info(f"Average RL FPR:           {rl_fpr_avg:.4f}")
 
     # Cos-Sim Metrics
-    print(f"\n--- Cos-Sim Metrics ---")
-    print(f"Average CS F1 Score:     {cs_f1_avg:.4f}")
-    print(f"Average CS Recall (TPR): {cs_rec_avg:.4f}")
-    print(f"Average CS Precision:    {cs_precision_avg:.4f}")
-    print(f"Average CS FPR:          {cs_fpr_avg:.4f}")
+    logger.info(f"--- Cos-Sim Metrics ---")
+    logger.info(f"Average CS F1 Score:     {cs_f1_avg:.4f}")
+    logger.info(f"Average CS Recall (TPR): {cs_rec_avg:.4f}")
+    logger.info(f"Average CS Precision:    {cs_precision_avg:.4f}")
+    logger.info(f"Average CS FPR:          {cs_fpr_avg:.4f}")
 
     # Variation (using F1 as the primary comparison)
     variation = ((rl_f1_avg - cs_f1_avg) / cs_f1_avg) * 100
-    print(f"\nF1 Score Variation: {(rl_f1_avg - cs_f1_avg):.4f}, {variation:.4f}%")
+    logger.info(f"F1 Score Variation: {(rl_f1_avg - cs_f1_avg):.4f}, {variation:.4f}%")
 
-    print(f"\n--- RL Model Confusion Matrix (Aggregated) ---")
-    print(f"  TP: {rl_cm['TP']:>6}    FP: {rl_cm['FP']:>6}")
-    print(f"  FN: {rl_cm['FN']:>6}    TN: {rl_cm['TN']:>6}")
+    logger.info(f"--- RL Model Confusion Matrix (Aggregated) ---")
+    logger.info(f"  TP: {rl_cm['TP']:>6}    FP: {rl_cm['FP']:>6}")
+    logger.info(f"  FN: {rl_cm['FN']:>6}    TN: {rl_cm['TN']:>6}")
 
-    print(f"\n--- Cos-Sim Confusion Matrix (Aggregated) ---")
-    print(f"  TP: {cs_cm['TP']:>6}    FP: {cs_cm['FP']:>6}")
-    print(f"  FN: {cs_cm['FN']:>6}    TN: {cs_cm['TN']:>6}")
+    logger.info(f"--- Cos-Sim Confusion Matrix (Aggregated) ---")
+    logger.info(f"  TP: {cs_cm['TP']:>6}    FP: {cs_cm['FP']:>6}")
+    logger.info(f"  FN: {cs_cm['FN']:>6}    TN: {cs_cm['TN']:>6}")
 
     return filtered_results
 
@@ -326,7 +329,7 @@ def plot_relevance_coverage(thresholds, final_data):
     plt.tight_layout()
     plt.savefig("recall_over_threshold.png", dpi=150, bbox_inches="tight")
     plt.show()
-    print("Saved → recall_over_threshold.png")
+    logger.info("Saved: recall_over_threshold.png")
 
 def analyze(cfg=None):
     if cfg is None:
@@ -342,17 +345,17 @@ def analyze(cfg=None):
     os.makedirs(os.path.dirname(paths['output_merged']), exist_ok=True)
     with open(paths['output_merged'], 'w') as f:
         json.dump(final_data, f, indent=4)
-    print(f"Merged data saved to {paths['output_merged']}")
+    logger.info(f"Merged data saved to {paths['output_merged']}")
     
     # Calculate and print metrics
     metrics = calculate_metrics(final_data)
-    print(f"\n{'='*50}")
-    print(f"Metrics Summary:")
-    print(f"{'='*50}")
-    print(f"Total number of queries: {metrics['query_count']}")
-    print(f"Average RL F1 Score: {metrics['avg_rl_f1_score']:.6f}")
-    print(f"Average Cosine Similarity F1 Score: {metrics['avg_cos_sim_f1_score']:.6f}")
-    print(f"{'='*50}")
+    logger.info(f"{'='*50}")
+    logger.info(f"Metrics Summary:")
+    logger.info(f"{'='*50}")
+    logger.info(f"Total number of queries: {metrics['query_count']}")
+    logger.info(f"Average RL F1 Score: {metrics['avg_rl_f1_score']:.6f}")
+    logger.info(f"Average Cosine Similarity F1 Score: {metrics['avg_cos_sim_f1_score']:.6f}")
+    logger.info(f"{'='*50}")
 
     completeness_threshold = 1.1 # 0.8 means chunks with more than 80% relevant are removed
 

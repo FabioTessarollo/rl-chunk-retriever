@@ -1,8 +1,11 @@
+import logging
 import os
 import json
 from collections import defaultdict
 from trec_car.read_data import iter_outlines, iter_paragraphs, iter_pages
 from config import get_config
+
+logger = logging.getLogger(__name__)
 
 
 def parse_qrels(qrels_path):
@@ -95,18 +98,18 @@ def process_fold(fold_idx, all_pages, all_queries, dataset, raw_dir, folds = Fal
 
     qrels_path = outlines.replace("outlines.cbor", "hierarchical.qrels")
 
-    print(f"\n=== Processing fold {fold_idx} ===")
+    logger.info(f"Processing fold {fold_idx}")
 
     queryid_to_paras = parse_qrels(qrels_path)
     queryid_to_querytext, queryid_to_pageid = get_query_strings(outlines)
 
-    print("Loading paragraph texts...")
+    logger.info("Loading paragraph texts...")
     paraid_to_text = get_paragraph_id_to_text_map(paras)
-    print(f"Loaded {len(paraid_to_text)} paragraph texts")
+    logger.info(f"Loaded {len(paraid_to_text)} paragraph texts")
 
-    print("Loading full page texts...")
+    logger.info("Loading full page texts...")
     pageid_to_fulltext = get_full_page_texts(pages, paras)
-    print(f"Loaded {len(pageid_to_fulltext)} full page texts")
+    logger.info(f"Loaded {len(pageid_to_fulltext)} full page texts")
 
     # Add page entries
     for page_id, full_text in pageid_to_fulltext.items():
@@ -157,11 +160,11 @@ def extract(dataset, cfg=None):
     with open(pages_output, 'w', encoding='utf-8') as pages_file:
         for entry in all_pages:
             pages_file.write(json.dumps(entry) + "\n")
-    print(f"\nExported {len(all_pages)} total pages to {pages_output}")
+    logger.info(f"Exported {len(all_pages)} total pages to {pages_output}")
 
     # Write combined relevant_paragraphs.jsonl
     queries_output = f"{extract_dir}/relevant_paragraphs_{dataset}.jsonl"
     with open(queries_output, 'w', encoding='utf-8') as queries_file:
         for entry in all_queries:
             queries_file.write(json.dumps(entry) + "\n")
-    print(f"Exported {len(all_queries)} total queries to {queries_output}")
+    logger.info(f"Exported {len(all_queries)} total queries to {queries_output}")

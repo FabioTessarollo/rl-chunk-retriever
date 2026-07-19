@@ -1,5 +1,5 @@
 class EarlyStopping:
-    def __init__(self, patience=5, delta_ratio=0.01):
+    def __init__(self, patience: int = 5, delta_ratio: float = 0.01):
         """
         Args:
             patience (int): how many epochs to wait after last improvement
@@ -12,7 +12,7 @@ class EarlyStopping:
         self.counter = 0
         self.early_stop = False
 
-    def step(self, score):
+    def step(self, score: float) -> bool:
         if self.best_score is None:
             self.best_score = score
             return False

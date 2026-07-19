@@ -1,12 +1,15 @@
 import json
+import logging
 import os
 import torch
 
-from retrieval.Data import Data
-from retrieval.DuelingDQN import DuelingDQN
+from retrieval.data_loader import Data
+from retrieval.dueling_dqn import DuelingDQN
 from retrieval.evaluate import evaluate
 from retrieval.feature_importance import compute_stream_ablation_importance, compute_stream_feature_importance
 from config import get_config, get_device, set_seed
+
+logger = logging.getLogger(__name__)
 
 
 def test(cfg=None):
@@ -15,7 +18,7 @@ def test(cfg=None):
 
     set_seed(cfg)
     device = get_device(cfg)
-    print(f"Using device: {device}")
+    logger.info(f"Using device: {device}")
 
     embed_dir = cfg.data.embed_dir
     cos_sim_dir = cfg.data.cos_sim_dir
@@ -36,7 +39,7 @@ def test(cfg=None):
 
     result = evaluate(data_test, data_test.query_ids, model, device, t.max_exp_loops, collect_results=True)
 
-    print(f"Test - Reward: {result.avg_reward:.4f}, F1: {result.avg_f1:.4f}, "
+    logger.info(f"Test - Reward: {result.avg_reward:.4f}, F1: {result.avg_f1:.4f}, "
           f"Recall: {result.avg_recall:.4f}, Precision: {result.avg_precision:.4f}")
 
     analysis_dir = cfg.data.analysis_dir

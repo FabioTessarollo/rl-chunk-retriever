@@ -1,3 +1,4 @@
+import logging
 import os
 import random
 import torch
@@ -6,7 +7,9 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
-from retrieval.Topic import Topic
+from retrieval.environment import Topic
+
+logger = logging.getLogger(__name__)
 
 
 def compute_stream_ablation_importance(online_net, data, query_ids, device, max_exp_loops, n_samples=1000):
@@ -114,12 +117,12 @@ def compute_stream_ablation_importance(online_net, data, query_ids, device, max_
     plt.savefig("ablation_importance.png", dpi=150)
     plt.close()
 
-    print(f"\n=== Ablation Summary ({total_states} states) ===")
-    print(f"{'Feature':<45} {'Flip Rate':>10}")
-    print("-" * 57)
+    logger.info(f"Ablation Summary ({total_states} states)")
+    logger.info(f"{'Feature':<45} {'Flip Rate':>10}")
+    logger.info("-" * 57)
     for lbl, flip in zip(labels[::-1], flip_all[::-1]):
         tag = "[META]" if lbl in metadata_feature_names else "[EMB] "
-        print(f"{tag} {lbl:<38} {flip:>10.3f}")
+        logger.info(f"{tag} {lbl:<38} {flip:>10.3f}")
 
 
 def compute_stream_feature_importance(online_net, data, query_ids, device, max_exp_loops, n_samples=1000):

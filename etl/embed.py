@@ -1,8 +1,11 @@
+import logging
 import os
 import json
 from tqdm import tqdm
 from sentence_transformers import SentenceTransformer
 from config import get_config
+
+logger = logging.getLogger(__name__)
 
 def embed_pages(input_path, output_path, model):
     with open(input_path, 'r', encoding='utf-8') as f:
@@ -55,7 +58,7 @@ def embed(dataset, cfg=None):
     rels_out = f'{embed_dir}/relevant_chunks_emb_{dataset}.json'
 
     model_name = cfg.etl.embedding_model
-    print(f'Loading model {model_name}...')
+    logger.info(f'Loading model {model_name}...')
     model = SentenceTransformer(model_name) # this is already doing L2 Norm
 
     embed_pages(pages_in, pages_out, model)

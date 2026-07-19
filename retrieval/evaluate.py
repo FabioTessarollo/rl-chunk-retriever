@@ -2,7 +2,7 @@ import torch
 import logging
 from dataclasses import dataclass, field
 
-from retrieval.Topic import Topic
+from retrieval.environment import Topic
 
 
 @dataclass
