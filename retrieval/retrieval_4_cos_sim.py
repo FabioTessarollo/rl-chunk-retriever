@@ -245,19 +245,3 @@ def cos_sim(cfg=None):
 
     os.makedirs(cos_sim_dir, exist_ok=True)
 
-    # Save train set rankings for RL model train and inference
-    # output_file = os.path.join(output_dir, f"cosine_sim_rank_threshold_only_single_train.json")
-    # with open(output_file, 'w') as f:
-    #     json.dump(all_rankings_train, f, indent=2)
-
-    # # Save test set rankings for RL model inference
-    # output_file = os.path.join(output_dir, f"cosine_sim_rank_threshold_only_single_test.json")
-    # with open(output_file, 'w') as f:
-    #     json.dump(all_rankings_test, f, indent=2)
-
-    # # Save TEST cos sim results for analysis
-    # output_file = os.path.join(output_dir, f"cosine_sim_rank_retrieved_test_single.json")
-    # with open(output_file, 'w') as f:
-    #     json.dump(cosine_sim_results, f, indent=2)
-
-

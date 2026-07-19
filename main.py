@@ -11,26 +11,7 @@ from config import get_config
 def main():
     cfg = get_config()
 
-    # Get train data
-    # extract('train', cfg)
-    # chunk_and_label('train', cfg)
-    # embed('train', cfg)
-
-    # Get CosSim results and rankings
-    # cos_sim(cfg)
-
-    # Training of RL Model
     train(cfg)
-
-    # Get test data
-    # extract('test', cfg)
-    # chunk_and_label('test', cfg)
-    # embed('test', cfg)
-
-    # Evaluate RL model on test data using trained model
-    # test(cfg)
-
-    # analyze(cfg)
 
 
 if __name__ == '__main__':

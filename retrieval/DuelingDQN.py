@@ -2,10 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
 class DuelingDQN(nn.Module):
     def __init__(self, metadata_dim, action_dim, proj_dim=256, dropout_p=0.0, embedding_dim=768):
         super(DuelingDQN, self).__init__()
