@@ -1,9 +1,10 @@
+import json
 import logging
 import os
-import json
 from collections import defaultdict
-from trec_car.read_data import iter_outlines, iter_paragraphs, iter_pages
+
 from config import get_config
+from trec_car.read_data import iter_outlines, iter_pages, iter_paragraphs
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ def process_fold(fold_idx, all_pages, all_queries, dataset, raw_dir, folds = Fal
     else:
         paras = f"{base_dir}/{dataset}.pages.cbor-paragraphs.cbor"
         outlines = f"{base_dir}/{dataset}.pages.cbor-outlines.cbor"
-        pages = f"{base_dir}/{dataset}.pages.cbor" 
+        pages = f"{base_dir}/{dataset}.pages.cbor"
 
     qrels_path = outlines.replace("outlines.cbor", "hierarchical.qrels")
 

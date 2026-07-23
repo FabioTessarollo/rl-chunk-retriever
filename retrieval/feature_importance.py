@@ -1,9 +1,11 @@
 import logging
 import os
 import random
-import torch
-import numpy as np
+
 import matplotlib
+import numpy as np
+import torch
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 

@@ -1,13 +1,15 @@
 import json
 import logging
 import os
+
+import mlflow
 import torch
 
+from config import get_config, get_device, set_seed
 from retrieval.data_loader import Data
 from retrieval.dueling_dqn import DuelingDQN
 from retrieval.evaluate import evaluate
-from retrieval.feature_importance import compute_stream_ablation_importance, compute_stream_feature_importance
-from config import get_config, get_device, set_seed
+from retrieval.feature_importance import compute_stream_ablation_importance
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,14 @@ def test(cfg=None):
 
     logger.info(f"Test - Reward: {result.avg_reward:.4f}, F1: {result.avg_f1:.4f}, "
           f"Recall: {result.avg_recall:.4f}, Precision: {result.avg_precision:.4f}")
+
+    if mlflow.active_run():
+        mlflow.log_metrics({
+            "test/reward": result.avg_reward,
+            "test/f1": result.avg_f1,
+            "test/recall": result.avg_recall,
+            "test/precision": result.avg_precision,
+        })
 
     analysis_dir = cfg.data.analysis_dir
     os.makedirs(analysis_dir, exist_ok=True)

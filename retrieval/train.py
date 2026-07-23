@@ -1,19 +1,19 @@
-import random
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
 import logging
+import random
 from datetime import datetime
-import numpy as np
 
-from retrieval.data_loader import Data
-from retrieval.environment import Topic
-from retrieval.dueling_dqn import DuelingDQN
-from retrieval.replay_buffer import PrioritizedReplayBuffer
-from retrieval.evaluate import evaluate
-from retrieval.plotting import plot_train_val_metric, plot_action_counts
+import mlflow
+import torch
+import torch.nn.functional as F
+import torch.optim as optim
+
 from config import get_config, get_device, set_seed
+from retrieval.data_loader import Data
+from retrieval.dueling_dqn import DuelingDQN
+from retrieval.environment import Topic
+from retrieval.evaluate import evaluate
+from retrieval.plotting import plot_action_counts, plot_train_val_metric
+from retrieval.replay_buffer import PrioritizedReplayBuffer
 
 logger = logging.getLogger(__name__)
 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -67,6 +67,33 @@ def train(cfg=None):
     extra_handler = logging.FileHandler("hyperparameters.csv", mode="a")
     extra_logger.addHandler(extra_handler)
     extra_logger.setLevel(logging.INFO)
+
+    mlflow.set_experiment("rl-chunks-retriever")
+    mlflow.start_run()
+    mlflow.log_params({
+        "proj_dim": t.proj_dim,
+        "gamma": t.gamma,
+        "epsilon": t.epsilon,
+        "epsilon_min": t.epsilon_min,
+        "epsilon_decay": t.epsilon_decay,
+        "batch_size": t.batch_size,
+        "replay_capacity": t.replay_capacity,
+        "lr": t.lr,
+        "eta_min": t.eta_min,
+        "target_update": t.target_update,
+        "epochs": t.epochs,
+        "max_exp_loops": t.max_exp_loops,
+        "action_dim": t.action_dim,
+        "dropout": t.dropout,
+        "per_alpha": t.per_alpha,
+        "per_beta": t.per_beta,
+        "per_beta_increment": t.per_beta_increment,
+        "weight_decay": t.weight_decay,
+        "scheduler_t_max": t.scheduler_t_max,
+        "train_split": t.train_split,
+        "embedding_dim": cfg.model.embedding_dim,
+        "seed": cfg.seed,
+    })
 
     step_count = 0
     train_f1_scores = []
@@ -213,6 +240,18 @@ def train(cfg=None):
         train_rewards.append(train_result.avg_reward)
         train_recalls.append(train_result.avg_recall)
 
+        mlflow.log_metrics(
+            {
+                "train/reward": train_result.avg_reward,
+                "train/f1": train_result.avg_f1,
+                "train/recall": train_result.avg_recall,
+                "train/precision": train_result.avg_precision,
+                "epsilon": epsilon,
+                "lr": current_lr,
+            },
+            step=epoch,
+        )
+
         val_result = evaluate(
             data, validation_set, online_net, device,
             t.max_exp_loops, reward_cfg=reward_cfg, track_actions=True,
@@ -222,6 +261,16 @@ def train(cfg=None):
         val_f1_scores.append(val_result.avg_f1)
         val_rewards.append(val_result.avg_reward)
         val_recalls.append(val_result.avg_recall)
+
+        mlflow.log_metrics(
+            {
+                "val/reward": val_result.avg_reward,
+                "val/f1": val_result.avg_f1,
+                "val/recall": val_result.avg_recall,
+                "val/precision": val_result.avg_precision,
+            },
+            step=epoch,
+        )
 
         probs_result = evaluate(
             data, random.sample(train_set, 50), online_net, device,
@@ -238,4 +287,7 @@ def train(cfg=None):
     plot_train_val_metric(train_rewards, val_rewards, 'Reward', 'train_vs_val_reward.png')
     plot_train_val_metric(train_recalls, val_recalls, 'Recall', 'train_vs_val_recall.png')
     plot_action_counts(history, 'train actions.png')
+
+    mlflow.log_artifact(cfg.model.path)
+    mlflow.end_run()
 

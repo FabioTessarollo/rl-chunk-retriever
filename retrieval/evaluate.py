@@ -1,6 +1,7 @@
-import torch
 import logging
 from dataclasses import dataclass, field
+
+import torch
 
 from retrieval.environment import Topic
 

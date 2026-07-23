@@ -1,9 +1,10 @@
 import json
 import logging
-import torch
 import random
-from statistics import mean
 from collections import defaultdict
+from statistics import mean
+
+import torch
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class Data:
                 addtional_chunks.append(prev)
         ranked_chunks.extend(addtional_chunks)
         return ranked_chunks
-    
+
     def get_avg_sim(self, query_id: int) -> float:
         with open(self.cosine_sim_rank_path, 'r', encoding='utf-8') as f:
             json_data = json.load(f)
@@ -57,7 +58,7 @@ class Data:
 
     def get_query_obj_from_id(self, query_id: int) -> dict | None:
         return next((query for query in self.relevant if query["query_id"] == query_id), None)
-    
+
     def get_query_ids_by_difficulty(self) -> tuple[list[int], list[int]]:
         fair_query_ids = []
         difficult_query_ids = []
@@ -71,7 +72,7 @@ class Data:
                 difficult_query_ids.append(q)
         logger.info(f"Count of fair queries: {len(fair_query_ids)}")
         return fair_query_ids, difficult_query_ids
-    
+
     def split_query_ids(self, query_ids: list[int], first_split_ratio: float) -> tuple[list[int], list[int]]:
 
         random.seed(1)
@@ -107,7 +108,7 @@ class Data:
         random.shuffle(second_set)
 
         return first_set, second_set
-        
+
     def balanced_split_query_ids(self, query_ids: list[int], first_split_ratio: float) -> tuple[list[int], list[int]]:
         first_set = []
         second_set = []
@@ -129,7 +130,7 @@ class Data:
             for i, elem in enumerate(ranked_chunks):
                 if elem in relevant_chunks:
                     score += 1 / (i + 1)
-            
+
             query_score[q] = score
 
         # 1. Compute mean score per page

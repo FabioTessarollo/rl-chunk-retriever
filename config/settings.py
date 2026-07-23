@@ -1,9 +1,10 @@
 import logging
 import os
 import random
-import yaml
-import torch
+
 import numpy as np
+import torch
+import yaml
 
 
 class Config:

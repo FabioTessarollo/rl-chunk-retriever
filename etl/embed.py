@@ -1,8 +1,10 @@
+import json
 import logging
 import os
-import json
-from tqdm import tqdm
+
 from sentence_transformers import SentenceTransformer
+from tqdm import tqdm
+
 from config import get_config
 
 logger = logging.getLogger(__name__)

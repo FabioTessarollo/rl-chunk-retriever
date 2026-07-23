@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+
 class DuelingDQN(nn.Module):
     def __init__(self, metadata_dim: int, action_dim: int, proj_dim: int = 256, dropout_p: float = 0.0, embedding_dim: int = 768):
         super(DuelingDQN, self).__init__()
@@ -13,7 +14,7 @@ class DuelingDQN(nn.Module):
         self.query_proj = nn.Linear(embedding_dim, proj_dim)
         self.bag_proj   = nn.Linear(embedding_dim, proj_dim)
 
-        combined_dim = 5 * proj_dim 
+        combined_dim = 5 * proj_dim
 
         # shared trunk
         self.fc1 = nn.Linear(combined_dim, 256)

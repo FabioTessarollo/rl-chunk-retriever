@@ -1,14 +1,13 @@
 import argparse
 
-from etl.extract import extract
+from config import get_config, setup_logging
 from etl.chunk_and_label import chunk_and_label
 from etl.embed import embed
-from retrieval.cosine_similarity import cos_sim
-from retrieval.train import train
-from retrieval.test import test
+from etl.extract import extract
 from retrieval.analysis import analyze
-from config import get_config, setup_logging
-
+from retrieval.cosine_similarity import cos_sim
+from retrieval.test import test
+from retrieval.train import train
 
 STAGES = ["extract", "chunk", "embed", "cos-sim", "train", "test", "analyze"]
 

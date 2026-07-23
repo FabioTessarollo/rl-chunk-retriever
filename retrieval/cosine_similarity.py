@@ -1,14 +1,14 @@
 import logging
-import random
-import json
 import os
+import random
+
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from retrieval.data_loader import Data
-from sklearn.metrics.pairwise import cosine_similarity
-import matplotlib.pyplot as plt
 from sklearn.metrics import auc
+
 from config import get_config, get_device
+from retrieval.data_loader import Data
 
 logger = logging.getLogger(__name__)
 
@@ -35,28 +35,28 @@ def evaluate_with_threshold(data, query_ids, threshold, device):
         page = data.get_page_chunks_dict(page_id)
         query_embedding = torch.tensor(query.get("query")).to(device)
         relevant_chunks = set(query.get("relevant_chunks"))
-        
+
         # Get all chunks with similarity above threshold
         selected_chunks = set()
         for chunk_id, chunk_embedding in page.items():
             chunk_similarity = get_cosine_sim(chunk_embedding, query_embedding)
             if chunk_similarity >= threshold:
                 selected_chunks.add(chunk_id)
-        
+
         # Count relevant retrieved
         num_relevant_retrieved = len(selected_chunks & relevant_chunks)
         num_relevant_total = len(relevant_chunks)
         num_retrieved = len(selected_chunks)
-        
+
         n += 1
-        
+
         # Compute recall and precision
         recall = num_relevant_retrieved / num_relevant_total if num_relevant_total > 0 else 0
         precision = num_relevant_retrieved / num_retrieved if num_retrieved > 0 else 0
-        
+
         recall_total += recall
         precision_total += precision
-        
+
         f1_score = 2 * (precision * recall) / (precision + recall) if precision + recall > 0 else 0
         f1_score_total += f1_score
 
@@ -70,7 +70,7 @@ def evaluate_with_threshold(data, query_ids, threshold, device):
             "f1_score": f1_score,
             "cos_sim_retrieved_chunks": list(selected_chunks)
         })
-    
+
     avg_recall = recall_total / n if n > 0 else 0
     avg_precision = precision_total / n if n > 0 else 0
     avg_f1_score = f1_score_total / n if n > 0 else 0
@@ -87,25 +87,25 @@ def evaluate_with_threshold(data, query_ids, threshold, device):
 
     per_chunk_stats = {"tp": int(tp), "fp": int(fp),
                        "tn": int(tn), "fn": int(fn)}
-    
+
     return avg_recall, avg_precision, avg_f1_score, cosine_sim_results, per_chunk_stats
 
 def find_optimal_threshold(data, training_query_ids, device, threshold_range=(0.77, 0.83), step=0.01, do_roc = False):
     """Find the optimal cosine similarity threshold using training data"""
     best_threshold = 0.0
     best_f1_score = 0.0
-    
+
     logger.info("Finding optimal threshold on training data...")
     thresholds = np.concatenate(([0], np.arange(threshold_range[0], threshold_range[1] + step, step), [1]))
     roc_points = []
-    
+
     for threshold in thresholds:
         _, _, f1_score, _, per_chunk_stats = evaluate_with_threshold(data, training_query_ids, threshold, device)
-        
+
         if f1_score > best_f1_score:
             best_f1_score = f1_score
             best_threshold = threshold
-        
+
         logger.info(f"Threshold: {threshold:.3f}, F1: {f1_score:.4f}")
 
         # ROC
@@ -124,17 +124,17 @@ def find_optimal_threshold(data, training_query_ids, device, threshold_range=(0.
         plt.figure(figsize=(6,5))
         plt.plot(fprs, tprs, marker='o', label=f'ROC (AUC={roc_auc:.3f})')
         plt.plot([0,1], [0,1], 'k--', label='Chance')
-        
+
         # Add threshold labels above each point
         for i, (fpr, tpr, thr) in enumerate(zip(fprs, tprs, thr_vals)):
-            plt.annotate(f'{thr:.2f}', 
-                        xy=(fpr, tpr), 
+            plt.annotate(f'{thr:.2f}',
+                        xy=(fpr, tpr),
                         xytext=(0, 8),  # 8 points above the point
                         textcoords='offset points',
                         ha='center',
                         fontsize=8,
                         alpha=0.7)
-        
+
         plt.xlabel('False Positive Rate (FPR)')
         plt.ylabel('True Positive Rate (TPR)')
         plt.title('ROC Curve – Threshold Sweep')
@@ -142,7 +142,7 @@ def find_optimal_threshold(data, training_query_ids, device, threshold_range=(0.
         plt.grid(True)
         plt.tight_layout()
         plt.savefig('ROC-AUC.png')
-    
+
     logger.info(f"Best threshold: {best_threshold:.3f} with F1: {best_f1_score:.4f}")
     return best_threshold
 
@@ -150,7 +150,7 @@ def get_rankings_with_threshold(data, query_ids, threshold, device, top_k, n_exa
     """Get rankings for queries using the specified threshold"""
     rankings = {}
     example_query_ids = set(random.sample(query_ids, min(n_examples, len(query_ids))))
-    
+
     for query_id in query_ids:
         query = data.get_query_obj_from_id(query_id)
         page_id = query.get("page_id")
@@ -159,7 +159,7 @@ def get_rankings_with_threshold(data, query_ids, threshold, device, top_k, n_exa
         query_embedding = torch.tensor(query.get("query")).to(device)
         relevant_chunks = set(query.get("relevant_chunks"))
         total_chunks_count = len(page)
-        
+
         # Calculate similarities for single chunks
         chunks_similarity_dict = {}
         for chunk_id, chunk_embedding in page.items():
@@ -169,7 +169,7 @@ def get_rankings_with_threshold(data, query_ids, threshold, device, top_k, n_exa
 
         # sort by similarity
         top_chunks = dict(sorted(chunks_similarity_dict.items(), key=lambda x: x[1], reverse=True)[:top_k])
-        
+
         # Store the query info
         rankings[query_id] = {
             "query_desc": query_desc,
@@ -181,14 +181,14 @@ def get_rankings_with_threshold(data, query_ids, threshold, device, top_k, n_exa
         if query_id in example_query_ids:
             selected_chunk_ids = {chunk_id for chunk_id, _ in top_chunks.items()}
             num_relevant_retrieved = len(selected_chunk_ids & relevant_chunks)
-            
+
             logger.info(f"Example for Query ID: {query_id}")
             logger.info(f"Query Description: {query_desc}")
             logger.info(f"Threshold: {threshold:.3f}")
             logger.info(f"Relevant chunks: {sorted(list(relevant_chunks))}")
             logger.info(f"Retrieved chunks: {[chunk_id for chunk_id, _ in top_chunks.items()]}")
             logger.info(f"Relevant retrieved: {num_relevant_retrieved}/{len(relevant_chunks)}")
-    
+
     return rankings
 
 def cos_sim(cfg=None):
@@ -224,14 +224,14 @@ def cos_sim(cfg=None):
     # Evaluate on training set with optimal threshold
     threshold_range = tuple(cs.threshold_range)
     optimal_threshold = find_optimal_threshold(data, train_set, device, threshold_range, do_roc=True)
-    
+
     # Evaluate on validation set with optimal threshold
     logger.info(f"Validation Set Results (Threshold: {optimal_threshold:.3f})")
     val_recall, val_precision, val_f1, _, _= evaluate_with_threshold(data, validation_set, optimal_threshold, device)
     logger.info(f"Recall: {val_recall:.4f}")
     logger.info(f"Precision: {val_precision:.4f}")
     logger.info(f"F1 Score: {val_f1:.4f}")
-    
+
     # Find optimal threshold using full training data
     optimal_threshold = find_optimal_threshold(data, data.query_ids, device, threshold_range)
 
@@ -241,7 +241,7 @@ def cos_sim(cfg=None):
     logger.info(f"Recall: {train_recall:.4f}")
     logger.info(f"Precision: {train_precision:.4f}")
     logger.info(f"F1 Score: {train_f1:.4f}")
-    
+
     # Get rankings for all queries using a threshold
     all_rankings_train = get_rankings_with_threshold(data, data.query_ids, cs.threshold, device, cs.top_k, n_examples)
     all_rankings_test = get_rankings_with_threshold(data_test, data_test.query_ids, cs.threshold, device, cs.top_k, n_examples)

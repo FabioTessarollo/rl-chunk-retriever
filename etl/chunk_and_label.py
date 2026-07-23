@@ -1,8 +1,10 @@
 import json
-import re
 import os
+import re
 from collections import defaultdict
+
 from config import get_config
+
 
 def chunk_text(text, chunk_size=100):
     # Split text into words and keep track of char spans
