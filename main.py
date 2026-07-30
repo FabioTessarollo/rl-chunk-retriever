@@ -44,8 +44,7 @@ def main():
 
     # Pipeline: run all stages
     pipe = sub.add_parser("pipeline")
-    pipe.add_argument("--from", dest="from_stage", default=None, choices=STAGES,
-                       help="Resume pipeline from this stage")
+    pipe.add_argument("--from", dest="from_stage", default=None, choices=STAGES, help="Resume pipeline from this stage")
 
     args = parser.parse_args()
     if not args.command:
@@ -53,7 +52,18 @@ def main():
         return
 
     cfg = get_config(args.config) if args.config else get_config()
-    setup_logging(args.log_level, args.log_file)
+
+    log_file = args.log_file
+    if log_file is None and (
+        args.command == "train"
+        or (
+            args.command == "pipeline"
+            and "train" in STAGES[(STAGES.index(args.from_stage) if args.from_stage else 0) :]
+        )
+    ):
+        log_file = "rl_training.log"
+
+    setup_logging(args.log_level, log_file)
 
     if args.command == "pipeline":
         start = STAGES.index(args.from_stage) if args.from_stage else 0
@@ -70,5 +80,5 @@ def main():
         run_stage(args.command, cfg, dataset)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

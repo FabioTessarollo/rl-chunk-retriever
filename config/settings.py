@@ -59,16 +59,17 @@ def setup_logging(level: str = "INFO", log_file: str | None = None) -> None:
     log_level = getattr(logging, level.upper(), logging.INFO)
 
     root = logging.getLogger()
-    root.setLevel(log_level)
+    # Root must allow DEBUG through so the file handler can capture verbose
+    # logs even when the console handler is limited to a higher level.
+    root.setLevel(logging.DEBUG if log_file else log_level)
 
     # Remove existing handlers to avoid duplicates on re-init
     root.handlers.clear()
 
-    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-                            datefmt="%Y-%m-%d %H:%M:%S")
+    fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 
     console = logging.StreamHandler()
-    console.setLevel(log_level)
+    console.setLevel(logging.WARNING if log_file else log_level)
     console.setFormatter(fmt)
     root.addHandler(console)
 
@@ -80,5 +81,23 @@ def setup_logging(level: str = "INFO", log_file: str | None = None) -> None:
         root.addHandler(fh)
 
     # Suppress noisy third-party loggers
-    for name in ("transformers", "sentence_transformers", "matplotlib", "PIL"):
+    for name in (
+        "transformers",
+        "sentence_transformers",
+        "matplotlib",
+        "PIL",
+        "git",
+        "git.cmd",
+        "git.util",
+        "urllib3",
+        "mlflow",
+        "mlflow_skinny",
+        "mlflow_tracing",
+        "docker",
+        "azure",
+        "botocore",
+        "boto3",
+        "opentelemetry",
+        "databricks",
+    ):
         logging.getLogger(name).setLevel(logging.WARNING)

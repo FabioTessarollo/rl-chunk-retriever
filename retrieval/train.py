@@ -25,7 +25,7 @@ def train(cfg=None):
 
     set_seed(cfg)
     device = get_device(cfg)
-    logger.info(f"Using device: {device}")
+    logger.debug(f"Using device: {device}")
 
     embed_dir = cfg.data.embed_dir
     cos_sim_dir = cfg.data.cos_sim_dir
@@ -57,10 +57,7 @@ def train(cfg=None):
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t.scheduler_t_max, eta_min=t.eta_min)
 
     replay = PrioritizedReplayBuffer(
-        capacity=t.replay_capacity,
-        alpha=t.per_alpha,
-        beta=t.per_beta,
-        beta_increment=t.per_beta_increment
+        capacity=t.replay_capacity, alpha=t.per_alpha, beta=t.per_beta, beta_increment=t.per_beta_increment
     )
 
     extra_logger = logging.getLogger("extra")
@@ -70,30 +67,32 @@ def train(cfg=None):
 
     mlflow.set_experiment("rl-chunks-retriever")
     mlflow.start_run()
-    mlflow.log_params({
-        "proj_dim": t.proj_dim,
-        "gamma": t.gamma,
-        "epsilon": t.epsilon,
-        "epsilon_min": t.epsilon_min,
-        "epsilon_decay": t.epsilon_decay,
-        "batch_size": t.batch_size,
-        "replay_capacity": t.replay_capacity,
-        "lr": t.lr,
-        "eta_min": t.eta_min,
-        "target_update": t.target_update,
-        "epochs": t.epochs,
-        "max_exp_loops": t.max_exp_loops,
-        "action_dim": t.action_dim,
-        "dropout": t.dropout,
-        "per_alpha": t.per_alpha,
-        "per_beta": t.per_beta,
-        "per_beta_increment": t.per_beta_increment,
-        "weight_decay": t.weight_decay,
-        "scheduler_t_max": t.scheduler_t_max,
-        "train_split": t.train_split,
-        "embedding_dim": cfg.model.embedding_dim,
-        "seed": cfg.seed,
-    })
+    mlflow.log_params(
+        {
+            "proj_dim": t.proj_dim,
+            "gamma": t.gamma,
+            "epsilon": t.epsilon,
+            "epsilon_min": t.epsilon_min,
+            "epsilon_decay": t.epsilon_decay,
+            "batch_size": t.batch_size,
+            "replay_capacity": t.replay_capacity,
+            "lr": t.lr,
+            "eta_min": t.eta_min,
+            "target_update": t.target_update,
+            "epochs": t.epochs,
+            "max_exp_loops": t.max_exp_loops,
+            "action_dim": t.action_dim,
+            "dropout": t.dropout,
+            "per_alpha": t.per_alpha,
+            "per_beta": t.per_beta,
+            "per_beta_increment": t.per_beta_increment,
+            "weight_decay": t.weight_decay,
+            "scheduler_t_max": t.scheduler_t_max,
+            "train_split": t.train_split,
+            "embedding_dim": cfg.model.embedding_dim,
+            "seed": cfg.seed,
+        }
+    )
 
     step_count = 0
     train_f1_scores = []
@@ -109,13 +108,14 @@ def train(cfg=None):
         random.shuffle(train_set)
 
         # Log current learning rate
-        current_lr = optimizer.param_groups[0]['lr']
-        logger.info(f"Epoch {epoch} - Learning Rate: {current_lr:.6f}")
+        current_lr = optimizer.param_groups[0]["lr"]
+        logger.debug(f"Epoch {epoch} - Learning Rate: {current_lr:.6f}")
 
         if epoch < t.warm_up_epochs:
             p = neg_schedule[epoch].item()
 
-        logger.info(f"Epoch: {epoch}")
+        print(f"Epoch {epoch}/{t.epochs}")
+        logger.debug(f"Epoch: {epoch}")
         for query_id in train_set:
             query = data.get_query_obj_from_id(query_id)
             page_id = query.get("page_id")
@@ -123,17 +123,15 @@ def train(cfg=None):
             query_emb = torch.tensor(query.get("query")).to(device)
             query_desc = query.get("query_desc")
             relevant_chunks = query.get("relevant_chunks")
-            ranked_chunks = data.cosine_sim_rank[str(query_id)] #ranked_chunks = data.get_ranked_with_prev_chunks_from_query_id(query_id)
+            ranked_chunks = data.cosine_sim_rank[
+                str(query_id)
+            ]  # ranked_chunks = data.get_ranked_with_prev_chunks_from_query_id(query_id)
 
-
-            ranked_chunks = [
-                c for c in ranked_chunks
-                if (c in relevant_chunks) or (torch.rand(1).item() < p)
-            ]
+            ranked_chunks = [c for c in ranked_chunks if (c in relevant_chunks) or (torch.rand(1).item() < p)]
             if not any(item in ranked_chunks for item in relevant_chunks):
                 continue
 
-            logging.info(f"Epoch: {epoch}, Query: {query_desc}")
+            logger.debug(f"Epoch: {epoch}, Query: {query_desc}")
 
             topic = Topic(query_emb, page, ranked_chunks, relevant_chunks, t.max_exp_loops, device, reward_cfg)
 
@@ -165,10 +163,7 @@ def train(cfg=None):
                 episode_reward += reward
 
                 # Store on CPU to save GPU memory
-                replay.push(
-                    state_emb.cpu(), state_meta.cpu(), action, reward,
-                    next_emb.cpu(), next_meta.cpu(), done
-                )
+                replay.push(state_emb.cpu(), state_meta.cpu(), action, reward, next_emb.cpu(), next_meta.cpu(), done)
 
                 state_emb, state_meta = next_emb, next_meta
 
@@ -199,7 +194,7 @@ def train(cfg=None):
                     td_errors = (q_values - targets).detach().cpu().numpy()
 
                     # Apply importance sampling weights to loss
-                    elementwise_loss = F.smooth_l1_loss(q_values, targets, reduction='none')
+                    elementwise_loss = F.smooth_l1_loss(q_values, targets, reduction="none")
                     loss = (is_weights * elementwise_loss).mean()
 
                     optimizer.zero_grad()
@@ -211,11 +206,13 @@ def train(cfg=None):
 
                 if step_count % t.target_update == 0:
                     target_net.load_state_dict(online_net.state_dict())
-                    logging.info(f"Target network updated at global step {step_count}")
+                    logger.debug(f"Target network updated at global step {step_count}")
 
             epoch_reward += episode_reward
             epoch_f1_score += topic.f1_score
-            logging.info(f"Episode Reward: {episode_reward:.4f}, Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Relevant: {topic.relevant_chunks}")
+            logger.debug(
+                f"Episode Reward: {episode_reward:.4f}, Episode F1: {topic.f1_score:.4f}, Bag: {topic.bag_of_chunks}, Relevant: {topic.relevant_chunks}"
+            )
 
             if epsilon > t.epsilon_min:
                 epsilon *= t.epsilon_decay
@@ -223,19 +220,28 @@ def train(cfg=None):
         avg_epoch_reward = epoch_reward / len(train_set)
         avg_epoch_f1_score = epoch_f1_score / len(train_set)
 
-        logger.info(f"Epoch: {epoch}, Average Reward: {avg_epoch_reward:.4f}, Average F1: {avg_epoch_f1_score:.4f}, Epsilon: {epsilon:.4f}")
+        logger.info(
+            f"Epoch: {epoch}, Average Reward: {avg_epoch_reward:.4f}, Average F1: {avg_epoch_f1_score:.4f}, Epsilon: {epsilon:.4f}"
+        )
 
         scheduler.step()
-
 
         online_net.eval()
 
         train_result = evaluate(
-            data, train_set, online_net, device,
-            t.max_exp_loops, reward_cfg=reward_cfg, track_actions=True,
-            history=history, epoch=epoch
+            data,
+            train_set,
+            online_net,
+            device,
+            t.max_exp_loops,
+            reward_cfg=reward_cfg,
+            track_actions=True,
+            history=history,
+            epoch=epoch,
         )
-        logger.info(f"GREEDY: Train - Reward: {train_result.avg_reward:.4f}, F1: {train_result.avg_f1:.4f}, Recall {train_result.avg_recall:.4f}, Precision {train_result.avg_precision:.4f}")
+        logger.info(
+            f"GREEDY: Train - Reward: {train_result.avg_reward:.4f}, F1: {train_result.avg_f1:.4f}, Recall {train_result.avg_recall:.4f}, Precision {train_result.avg_precision:.4f}"
+        )
         train_f1_scores.append(train_result.avg_f1)
         train_rewards.append(train_result.avg_reward)
         train_recalls.append(train_result.avg_recall)
@@ -253,11 +259,19 @@ def train(cfg=None):
         )
 
         val_result = evaluate(
-            data, validation_set, online_net, device,
-            t.max_exp_loops, reward_cfg=reward_cfg, track_actions=True,
-            history=history, epoch=epoch
+            data,
+            validation_set,
+            online_net,
+            device,
+            t.max_exp_loops,
+            reward_cfg=reward_cfg,
+            track_actions=True,
+            history=history,
+            epoch=epoch,
         )
-        logger.info(f"GREEDY: Val - Reward: {val_result.avg_reward:.4f}, F1: {val_result.avg_f1:.4f}, Recall {val_result.avg_recall:.4f}, Precision {val_result.avg_precision:.4f}")
+        logger.info(
+            f"GREEDY: Val - Reward: {val_result.avg_reward:.4f}, F1: {val_result.avg_f1:.4f}, Recall {val_result.avg_recall:.4f}, Precision {val_result.avg_precision:.4f}"
+        )
         val_f1_scores.append(val_result.avg_f1)
         val_rewards.append(val_result.avg_reward)
         val_recalls.append(val_result.avg_recall)
@@ -273,21 +287,26 @@ def train(cfg=None):
         )
 
         probs_result = evaluate(
-            data, random.sample(train_set, 50), online_net, device,
-            t.max_exp_loops, reward_cfg=reward_cfg, track_actions=True,
-            history=history, epoch=epoch
+            data,
+            random.sample(train_set, 50),
+            online_net,
+            device,
+            t.max_exp_loops,
+            reward_cfg=reward_cfg,
+            track_actions=True,
+            history=history,
+            epoch=epoch,
         )
         probs = probs_result.probs
 
+    extra_logger.info(
+        f"{now_str}\t{t.proj_dim}\t{t.gamma}\t{t.epsilon_min}\t{t.epsilon_decay}\t{t.batch_size}\t{t.replay_capacity}\t{t.lr}\t{t.target_update}\t{t.epochs}\t{t.max_exp_loops}\t{t.action_dim}\tcosine\t{t.per_alpha}\t{t.per_beta}\t{t.per_beta_increment}\t{t.dropout}"
+    )
 
-
-    extra_logger.info(f"{now_str}\t{t.proj_dim}\t{t.gamma}\t{t.epsilon_min}\t{t.epsilon_decay}\t{t.batch_size}\t{t.replay_capacity}\t{t.lr}\t{t.target_update}\t{t.epochs}\t{t.max_exp_loops}\t{t.action_dim}\tcosine\t{t.per_alpha}\t{t.per_beta}\t{t.per_beta_increment}\t{t.dropout}")
-
-    plot_train_val_metric(train_f1_scores, val_f1_scores, 'F1 Score', 'train_vs_val_f1_score.png')
-    plot_train_val_metric(train_rewards, val_rewards, 'Reward', 'train_vs_val_reward.png')
-    plot_train_val_metric(train_recalls, val_recalls, 'Recall', 'train_vs_val_recall.png')
-    plot_action_counts(history, 'train actions.png')
+    plot_train_val_metric(train_f1_scores, val_f1_scores, "F1 Score", "train_vs_val_f1_score.png")
+    plot_train_val_metric(train_rewards, val_rewards, "Reward", "train_vs_val_reward.png")
+    plot_train_val_metric(train_recalls, val_recalls, "Recall", "train_vs_val_recall.png")
+    plot_action_counts(history, "train actions.png")
 
     mlflow.log_artifact(cfg.model.path)
     mlflow.end_run()
-
