@@ -1,37 +1,84 @@
-from etl.etl_1_extract import extract
-from etl.etl_2_chunk_and_label import chunk_and_label
-from etl.etl_3_embed import embed
-from retrieval.retrieval_4_cos_sim import cos_sim
-from retrieval.retrieval_5_1_rl_train import train
-from retrieval.retrieval_5_2_rl_test import test
-from retrieval.retrieval_5_3_analysis import analyze
+import argparse
 
+from config import get_config, setup_logging
+from etl.chunk_and_label import chunk_and_label
+from etl.embed import embed
+from etl.extract import extract
+from retrieval.analysis import analyze
+from retrieval.cosine_similarity import cos_sim
+from retrieval.test import test
+from retrieval.train import train
+
+STAGES = ["extract", "chunk", "embed", "cos-sim", "train", "test", "analyze"]
+
+
+def run_stage(stage, cfg, dataset):
+    dispatch = {
+        "extract": lambda: extract(dataset, cfg),
+        "chunk": lambda: chunk_and_label(dataset, cfg),
+        "embed": lambda: embed(dataset, cfg),
+        "cos-sim": lambda: cos_sim(cfg),
+        "train": lambda: train(cfg),
+        "test": lambda: test(cfg),
+        "analyze": lambda: analyze(cfg),
+    }
+    dispatch[stage]()
 
 
 def main():
+    parser = argparse.ArgumentParser(description="RL Chunks Retriever Pipeline")
+    parser.add_argument("--config", default=None, help="Path to config YAML file")
+    parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
+    parser.add_argument("--log-file", default=None, help="Optional log file path")
 
-    # Get train data
-    # extract('train')
-    # chunk_and_label('train', chunk_size = 50)
-    # embed('train')
+    sub = parser.add_subparsers(dest="command")
 
-    # Get CosSim results and rankings
-    #cos_sim()
+    # ETL stages that need --dataset
+    for name in ("extract", "chunk", "embed"):
+        p = sub.add_parser(name)
+        p.add_argument("--dataset", required=True, choices=["train", "test"])
 
-    # Traing of RL Model
-    train()
+    # Stages without --dataset
+    for name in ("cos-sim", "train", "test", "analyze"):
+        sub.add_parser(name)
 
-    # Get test data
-    # extract('test')
-    # chunk_and_label('test', chunk_size = 50)
-    # embed('test')
+    # Pipeline: run all stages
+    pipe = sub.add_parser("pipeline")
+    pipe.add_argument("--from", dest="from_stage", default=None, choices=STAGES, help="Resume pipeline from this stage")
 
-    # Evaluate RL model on test data using trained model
-    #test()
+    args = parser.parse_args()
+    if not args.command:
+        parser.print_help()
+        return
 
-    #analyze()
+    cfg = get_config(args.config) if args.config else get_config()
+
+    log_file = args.log_file
+    if log_file is None and (
+        args.command == "train"
+        or (
+            args.command == "pipeline"
+            and "train" in STAGES[(STAGES.index(args.from_stage) if args.from_stage else 0) :]
+        )
+    ):
+        log_file = "rl_training.log"
+
+    setup_logging(args.log_level, log_file)
+
+    if args.command == "pipeline":
+        start = STAGES.index(args.from_stage) if args.from_stage else 0
+        for stage in STAGES[start:]:
+            dataset = "train"  # default for ETL stages in pipeline mode
+            if stage in ("extract", "chunk", "embed"):
+                # Run both train and test for ETL stages
+                for ds in ("train", "test"):
+                    run_stage(stage, cfg, ds)
+            else:
+                run_stage(stage, cfg, None)
+    else:
+        dataset = getattr(args, "dataset", None)
+        run_stage(args.command, cfg, dataset)
 
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

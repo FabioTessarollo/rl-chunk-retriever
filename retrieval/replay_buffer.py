@@ -1,5 +1,6 @@
-from collections import deque
 import random
+from collections import deque
+
 import numpy as np
 
 
@@ -117,7 +118,7 @@ class PrioritizedReplayBuffer:
 
     def __len__(self):
         return self.tree.n_entries
-    
+
 
 class SimpleReplayBuffer:
     def __init__(self, capacity):

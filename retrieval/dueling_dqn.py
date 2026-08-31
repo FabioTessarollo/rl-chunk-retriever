@@ -2,21 +2,19 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 
 class DuelingDQN(nn.Module):
-    def __init__(self, metadata_dim, action_dim, proj_dim=256, dropout_p=0.0):
+    def __init__(self, metadata_dim: int, action_dim: int, proj_dim: int = 256, dropout_p: float = 0.0, embedding_dim: int = 768):
         super(DuelingDQN, self).__init__()
+        self.embedding_dim = embedding_dim
 
-        self.single_proj = nn.Linear(768, proj_dim)
-        self.double_proj = nn.Linear(768*2, proj_dim)
-        self.prev_double_proj = nn.Linear(768*2, proj_dim)
-        self.query_proj = nn.Linear(768, proj_dim)
-        self.bag_proj   = nn.Linear(768, proj_dim)
+        self.single_proj = nn.Linear(embedding_dim, proj_dim)
+        self.double_proj = nn.Linear(embedding_dim*2, proj_dim)
+        self.prev_double_proj = nn.Linear(embedding_dim*2, proj_dim)
+        self.query_proj = nn.Linear(embedding_dim, proj_dim)
+        self.bag_proj   = nn.Linear(embedding_dim, proj_dim)
 
-        combined_dim = 5 * proj_dim 
+        combined_dim = 5 * proj_dim
 
         # shared trunk
         self.fc1 = nn.Linear(combined_dim, 256)
@@ -31,9 +29,9 @@ class DuelingDQN(nn.Module):
         self.adv_fc = nn.Linear(128, 64)
         self.adv_out = nn.Linear(64, action_dim)
 
-    def forward(self, state_embedding, state_metadata, return_streams=False):
+    def forward(self, state_embedding: torch.Tensor, state_metadata: torch.Tensor, return_streams: bool = False) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # split concatenated embeddings
-        current, next, prev, query, bag = torch.split(state_embedding, 768, dim=-1)
+        current, next, prev, query, bag = torch.split(state_embedding, self.embedding_dim, dim=-1)
         current_and_next = torch.cat([current, next], dim=-1)
         current_and_prev = torch.cat([prev, current], dim=-1)
 

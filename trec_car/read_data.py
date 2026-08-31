@@ -3,11 +3,10 @@
 
 from __future__ import print_function
 
+import itertools
 from abc import abstractmethod
 
 import cbor
-import itertools
-import typing
 
 PageId = str
 PageName = str
@@ -456,7 +455,7 @@ class Section(PageSkeleton):
         return [child for child in self.children if isinstance(child, InfoBox)]
 
 class Para(PageSkeleton):
-    """
+    r"""
     A paragraph within a Wikipedia page.
 
     .. attribute:: paragraph
@@ -710,7 +709,7 @@ def _iter_with_header(file, parse, expected_file_types):
     if isinstance(maybe_hdr, list) and maybe_hdr[0] == 'CAR':
         # we have a header
         file_type = maybe_hdr[1][0]
-        if not file_type in expected_file_types:
+        if file_type not in expected_file_types:
             # print( 'File type tag is expected to be ', (" ".join(expected_file_types)), 'but given file is of type ', file_type)
             # print('Did not expect file of type', file_type)
             raise WrongCarFileException(file_type, expected_file_types)
@@ -737,7 +736,7 @@ def peek_for_break(cbor):
 
 
 def iter_annotations(file):
-    """
+    r"""
     Iterate over the :class:`Page`\ s of an annotations file.
 
     :type file: typing.BinaryIO
@@ -749,7 +748,7 @@ def iter_annotations(file):
 
 
 def iter_pages(file):
-    """
+    r"""
     Iterate over the :class:`Page`\ s of an annotations file.
 
     :type file: typing.BinaryIO
@@ -760,7 +759,7 @@ def iter_pages(file):
 
 
 def iter_outlines(file):
-    """
+    r"""
     Iterate over the :class:`Page`\ s of an annotations file.
 
     :type file: typing.BinaryIO
@@ -770,7 +769,7 @@ def iter_outlines(file):
 
 
 def iter_paragraphs(file):
-    """
+    r"""
     Iterate over the :class:`Paragraph`\ s of an paragraphs file.
 
     :type file: typing.BinaryIO

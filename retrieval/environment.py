@@ -1,0 +1,235 @@
+from __future__ import annotations
+
+import torch
+
+
+class Topic:
+
+    def __init__(self, query_emb: torch.Tensor, page_chunks_dict: dict[int, torch.Tensor],
+                 ranked_chunks: list[int], relevant_chunks: list[int],
+                 max_exp_loops: int, device: torch.device | None = None,
+                 reward_cfg=None):
+        self.current_rank_chunk = 0 # rank position of the current chunk - to navigate the rank
+        self.current_chunk_id = 0 # chunk id value of the current chunk - to navigate the page
+        self.query_emb = query_emb
+        self.page_chunks_dict = page_chunks_dict
+        self.ranked_chunks = ranked_chunks
+        self.relevant_chunks = relevant_chunks
+        self.bag_of_chunks = []
+        self.done = False
+        self.truncated = False
+        self.max_chunk_id = max(page_chunks_dict.keys())
+        self.f1_score = 0
+        self.reward_f1 = 0
+        self.recall = 0
+        self.precision = 0
+        self.device = device if device is not None else torch.device("cpu")
+        self.bag_of_chunks_embedding = torch.zeros(len(query_emb), dtype=torch.float32, device = self.device)
+        self.current_loop = 0
+        self.max_exp_loops = max_exp_loops
+        self.curr_chunk_emb = None
+        self.next_chunk_emb = None
+        self.prev_chunk_emb = None
+        self.TP = reward_cfg.tp if reward_cfg else 1/3
+        self.FP = reward_cfg.fp if reward_cfg else -1/6
+        self.FN = reward_cfg.fn if reward_cfg else -1/2
+
+    def _advance_rank(self):
+        old_f1_score = self.f1_score
+        self.set_f1_score()
+        self.reward_f1 = self.f1_score - old_f1_score
+        if self.current_rank_chunk == len(self.ranked_chunks) - 1:
+            self.truncated = True
+        else:
+            self.current_rank_chunk += 1
+            self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
+            while self.current_chunk_id in self.bag_of_chunks:
+                if self.current_rank_chunk == len(self.ranked_chunks) - 1:
+                    self.truncated = True
+                    break
+                self.current_rank_chunk += 1
+                self.current_chunk_id = self.ranked_chunks[self.current_rank_chunk]
+
+
+    def cos_sim_norm(self, v1, v2):
+        sim = torch.nn.functional.cosine_similarity(v1.unsqueeze(0), v2.unsqueeze(0))
+        sim = (sim + 1) / 2
+        sim = (sim - 0.75) / 0.25
+        return sim
+
+    def euc_sim_norm(self, v1, v2):
+        distance = torch.nn.functional.pairwise_distance(v1.unsqueeze(0), v2.unsqueeze(0))
+        sim = torch.exp(-distance / 1.0)
+        return sim
+
+    def get_state_metadata(self) -> torch.Tensor:
+        rank_position = (self.current_rank_chunk + 1)  / len(self.ranked_chunks)
+        bag_size = len(self.bag_of_chunks) / len(self.ranked_chunks)
+        sq_sim = self.cos_sim_norm(self.curr_chunk_emb, self.query_emb)
+        dq_sim = self.cos_sim_norm(self.next_chunk_emb, self.curr_chunk_emb)
+        bq_sim = self.cos_sim_norm(self.bag_of_chunks_embedding, self.query_emb)
+        pdq_sim = self.cos_sim_norm(self.prev_chunk_emb, self.curr_chunk_emb)
+        state_metadata = torch.tensor([rank_position, bag_size, sq_sim, dq_sim, bq_sim, pdq_sim], device = self.device)
+        return state_metadata
+
+    def get_initial_step(self) -> tuple[torch.Tensor, torch.Tensor, int, bool]:
+        self.current_chunk_id = self.ranked_chunks[0]
+        state_embedding = self.get_state_embedding()
+        state_metadata = self.get_state_metadata()
+        return (state_embedding, state_metadata, 0, self.done)
+
+    def set_f1_score(self):
+
+        bag_size = len(self.bag_of_chunks)
+        relevant_size = len(self.relevant_chunks)
+        TP = len([c for c in self.bag_of_chunks if c in self.relevant_chunks])
+
+        self.recall = TP / relevant_size if relevant_size > 0 else 0
+        self.precision = TP / bag_size if bag_size > 0 else 0
+
+        self.f1_score = (2 * self.precision * self.recall) / (self.precision + self.recall) if (self.precision + self.recall) > 0 else 0
+
+    def get_state_embedding(self) -> torch.Tensor:
+
+        # get current chunk id embedding
+        self.curr_chunk_emb = self.page_chunks_dict.get(self.current_chunk_id)
+
+        if self.current_chunk_id == self.max_chunk_id:
+            self.next_chunk_emb = torch.zeros(768, device = self.device)
+        else:
+            self.next_chunk_emb = self.page_chunks_dict.get(self.current_chunk_id + 1)
+
+        if self.current_chunk_id == 0:
+            self.prev_chunk_emb = torch.zeros(768, device = self.device)
+        else:
+            self.prev_chunk_emb = self.page_chunks_dict.get(self.current_chunk_id - 1)
+
+        state_embedding = torch.concat((self.curr_chunk_emb, self.next_chunk_emb, self.prev_chunk_emb, self.query_emb, self.bag_of_chunks_embedding), dim = 0)
+
+        return state_embedding
+
+    def _add_to_bag(self, chunk_id, embedding):
+        if chunk_id not in self.bag_of_chunks:
+            n = len(self.bag_of_chunks)
+            self.bag_of_chunks_embedding = (self.bag_of_chunks_embedding * n + embedding) / (n + 1)
+            self.bag_of_chunks.append(chunk_id)
+
+    def _compute_step_return(self, raw_reward):
+        self._advance_rank()
+        state_embedding = self.get_state_embedding()
+        state_metadata = self.get_state_metadata()
+        reward = (raw_reward * 3 + self.reward_f1) / 4
+        return (state_embedding, state_metadata, reward, self.done, self.truncated)
+
+    def step(self, action: int) -> tuple[torch.Tensor, torch.Tensor, float, bool, bool]:
+        dispatch = [self.skip, self.take_single, self.take_double, self.take_prev_double, self.take_triple]
+        return dispatch[action]()
+
+    def skip(self):
+
+        c2 = self.current_chunk_id + 1
+        c3 = self.current_chunk_id - 1
+
+        if self.current_chunk_id in self.relevant_chunks:
+            reward = self.FN
+            if self.current_rank_chunk < 5 and self.current_chunk_id not in self.bag_of_chunks:
+                reward -= (1 - self.current_rank_chunk/5)/4
+
+            if c2 in self.relevant_chunks and c3 in self.relevant_chunks:
+                reward -= 0.25
+            elif c2 in self.relevant_chunks or c3 in self.relevant_chunks:
+                reward -= 0.1
+        else:
+            reward = 0
+
+        return self._compute_step_return(reward)
+
+    def take_single(self):
+
+        if self.current_chunk_id in self.relevant_chunks:
+            reward = self.TP
+        else:
+            reward = self.FP
+
+        self._add_to_bag(self.current_chunk_id, self.curr_chunk_emb)
+
+        return self._compute_step_return(reward)
+
+    def take_double(self):
+
+        if self.current_chunk_id == self.max_chunk_id:
+            return self.take_single()
+
+        c1 = self.current_chunk_id
+        c2 = self.current_chunk_id + 1
+        c3 = self.current_chunk_id - 1
+
+        both_relevant = c1 in self.relevant_chunks and c2 in self.relevant_chunks
+        one_is_relevant = c1 in self.relevant_chunks or c2 in self.relevant_chunks
+        out_was_not_relevant = c3 not in self.relevant_chunks
+        if both_relevant:
+            reward = self.TP * 2
+            if out_was_not_relevant and c3 > 0:
+                reward += 0.15
+        elif one_is_relevant:
+            reward = self.TP + self.FP
+        else:
+            reward = self.FP * 2
+
+        self._add_to_bag(c1, self.curr_chunk_emb)
+        self._add_to_bag(c2, self.next_chunk_emb)
+
+        return self._compute_step_return(reward)
+
+    def take_prev_double(self):
+
+        if self.current_chunk_id == 0:
+            return self.take_single()
+
+        c1 = self.current_chunk_id
+        c2 = self.current_chunk_id - 1
+        c3 = self.current_chunk_id + 1
+
+        both_relevant = c1 in self.relevant_chunks and c2 in self.relevant_chunks
+        one_is_relevant = c1 in self.relevant_chunks or c2 in self.relevant_chunks
+        out_was_not_relevant = c3 not in self.relevant_chunks
+        if both_relevant:
+            reward = self.TP * 2
+            if out_was_not_relevant:
+                reward += 0.15
+        elif one_is_relevant:
+            reward = self.TP + self.FP
+        else:
+            reward = self.FP * 2
+
+        self._add_to_bag(c1, self.curr_chunk_emb)
+        self._add_to_bag(c2, self.prev_chunk_emb)
+
+        return self._compute_step_return(reward)
+
+    def take_triple(self):
+
+        if self.current_chunk_id == 0 or self.current_chunk_id == self.max_chunk_id:
+            return self.take_single()
+
+        c1 = self.current_chunk_id
+        c2 = self.current_chunk_id - 1
+        c3 = self.current_chunk_id + 1
+
+        selected = [c1, c2, c3]
+        relevant_selected = sum(1 for c in selected if c in self.relevant_chunks)
+
+        if relevant_selected == 3:
+            reward = self.TP * 3
+        elif relevant_selected == 2:
+            reward = self.TP * 2 + self.FP
+        elif relevant_selected == 1:
+            reward = self.TP + self.FP * 2
+        else:
+            reward = self.FP * 3
+
+        self._add_to_bag(c1, self.curr_chunk_emb)
+        self._add_to_bag(c2, self.prev_chunk_emb)
+        self._add_to_bag(c3, self.next_chunk_emb)
+
+        return self._compute_step_return(reward)

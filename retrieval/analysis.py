@@ -1,17 +1,26 @@
 import json
+import logging
 import os
 from collections import defaultdict
+
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
 
+from config import get_config
 
-# Define the file paths
-RL_MODEL_FILE = 'data_5_analysis/rl_model_retrieved_test_single.json' 
-COS_SIM_FILE = 'data_4_cos_sim/cosine_sim_rank_retrieved_test_single.json'
-RANKINGS = 'data_4_cos_sim/cosine_sim_rank_threshold_only_single_test.json'
-CHUNKS_SCORES_FILE = 'data_2_chunk_and_label/relevant_chunks_test.json'
-OUTPUT_MERGED = "data_5_analysis/comprehensive_merged_results_single.json"
+logger = logging.getLogger(__name__)
+
+
+def _get_paths(cfg):
+    """Resolve file paths from config."""
+    return {
+        'rl_model': f'{cfg.data.analysis_dir}/rl_model_retrieved_test_single.json',
+        'cos_sim': f'{cfg.data.cos_sim_dir}/cosine_sim_rank_retrieved_test_single.json',
+        'rankings': f'{cfg.data.cos_sim_dir}/cosine_sim_rank_threshold_only_single_test.json',
+        'chunks_scores': f'{cfg.data.chunk_dir}/relevant_chunks_test.json',
+        'output_merged': f'{cfg.data.analysis_dir}/comprehensive_merged_results_single.json',
+    }
 
 def f1_score(pred_ids, true_ids, all_ids):
     tp = len(set(pred_ids) & set(true_ids))
@@ -26,55 +35,55 @@ def f1_score(pred_ids, true_ids, all_ids):
     return f1, recall, precision, fpr
 
 
-def merge_json_data():
+def merge_json_data(paths):
     """
     Merge data from three JSON files by matching queries.
     The resulting merged data is ordered by page_id and query.
     """
-    
+
     # Load all data files
-    with open(RL_MODEL_FILE, 'r') as f:
+    with open(paths['rl_model'], 'r') as f:
         rl_data = json.load(f)
-    
-    with open(COS_SIM_FILE, 'r') as f:
+
+    with open(paths['cos_sim'], 'r') as f:
         cos_sim_data = json.load(f)
-    
-    with open(CHUNKS_SCORES_FILE, 'r') as f:
+
+    with open(paths['chunks_scores'], 'r') as f:
         chunks_data = json.load(f)
 
-    with open(RANKINGS, 'r') as f:
+    with open(paths['rankings'], 'r') as f:
         rankings = json.load(f)
-    
+
     # Create lookup dictionaries
     rl_lookup = {item['query']: item for item in rl_data}
     cos_sim_lookup = {item['query_desc']: item for item in cos_sim_data}
     chunks_count_lookup = {v["query_desc"]: v["total_chunks_count"] for v in rankings.values()}
     chunks_lookup = defaultdict(list)
-    
+
     for item in chunks_data:
         key = item['query']
         chunks_lookup[key].append(item)
-    
+
     # Merge data
     merged_results = []
     seen_queries = set()
-    
+
     # Iterate through chunks data as the base (contains page_id and query)
     for item in chunks_data:
         query = item['query']
         page_id = item['page_id']
-        
+
         # Skip duplicates (in case same query appears multiple times)
         query_page_key = (query, page_id)
         if query_page_key in seen_queries:
             continue
         seen_queries.add(query_page_key)
-        
+
         # Get corresponding data from RL and cosine similarity
         rl_item = rl_lookup.get(query)
         cos_sim_item = cos_sim_lookup.get(query)
         chunks_count_item = chunks_count_lookup[query]
-        
+
         # Build merged object
         merged_obj = {
             "page_id": page_id,
@@ -88,12 +97,12 @@ def merge_json_data():
             "chunk_relevant_portion": item['chunk_relevant_portion'],
             "total_chunks_count": chunks_count_item
         }
-        
+
         merged_results.append(merged_obj)
-    
+
     # Sort by page_id, then by query
     merged_results.sort(key=lambda x: (x['page_id'], x['query']))
-    
+
     return merged_results
 
 
@@ -103,17 +112,17 @@ def calculate_metrics(merged_data):
     """
     rl_scores = []
     cos_sim_scores = []
-    
+
     for item in merged_data:
         if item['rl_f1_score'] is not None:
             rl_scores.append(item['rl_f1_score'])
         if item['cos_sim_f1_score'] is not None:
             cos_sim_scores.append(item['cos_sim_f1_score'])
-    
+
     avg_rl_f1 = sum(rl_scores) / len(rl_scores) if rl_scores else 0
     avg_cos_sim_f1 = sum(cos_sim_scores) / len(cos_sim_scores) if cos_sim_scores else 0
     query_count = len(merged_data)
-    
+
     return {
         'avg_rl_f1_score': avg_rl_f1,
         'avg_cos_sim_f1_score': avg_cos_sim_f1,
@@ -138,21 +147,21 @@ def process_all_queries(final_data, completeness_threshold, topk, return_avg_sco
 
     for item in final_data:
         query = item['query']
-        
+
         # Identify keys in chunk_relevant_portion above threshold
         keys_to_remove = set()
         for chunk_dict in item['chunk_relevant_portion']:
             for key, value in chunk_dict.items():
                 if value >= completeness_threshold:
                     keys_to_remove.add(key)
-        
+
         # Remove identified keys from chunk_relevant_portion and relevant_paragraph_origin
         chunk_relevant_portion_filtered = [
             {k: v for k, v in chunk_dict.items() if k not in keys_to_remove}
             for chunk_dict in item['chunk_relevant_portion']
         ]
         chunk_relevant_portion_filtered = [d for d in chunk_relevant_portion_filtered if d]
-        
+
         relevant_paragraph_origin_filtered = {
             k: v for k, v in item['relevant_paragraph_origin'].items()
             if k not in keys_to_remove
@@ -161,18 +170,18 @@ def process_all_queries(final_data, completeness_threshold, topk, return_avg_sco
         chunks_to_remove = [float(x) for x in keys_to_remove]
 
         remaining_chunks = set(int(k) for k in relevant_paragraph_origin_filtered.keys())
-        
+
         # Filter the lists
         rl_model_retrieved_filtered = [
             chunk_id for chunk_id in item['rl_model_retrieved']
             if chunk_id not in chunks_to_remove
         ][:topk]
-        
+
         cos_sim_retrieved_chunks_filtered = [
             chunk_id for chunk_id in item['cos_sim_retrieved_chunks']
             if chunk_id not in chunks_to_remove
         ][:topk]
-        
+
         relevant_chunks_filtered = [
             chunk_id for chunk_id in item['relevant_chunks']
             if chunk_id not in chunks_to_remove
@@ -180,7 +189,7 @@ def process_all_queries(final_data, completeness_threshold, topk, return_avg_sco
 
         if not relevant_chunks_filtered:
             continue
-                
+
         rl_f1, rl_recall, rl_precision, rl_fpr = f1_score(rl_model_retrieved_filtered, relevant_chunks_filtered, item['total_chunks_count'])
         cos_sim_f1, cos_sim_recall, cos_sim_precision, cos_sim_fpr = f1_score(cos_sim_retrieved_chunks_filtered, relevant_chunks_filtered, item['total_chunks_count'])
 
@@ -201,7 +210,7 @@ def process_all_queries(final_data, completeness_threshold, topk, return_avg_sco
         cs_cm['FP'] += cs_fp
         cs_cm['FN'] += cs_fn
         cs_cm['TN'] += cs_tn
-        
+
         rl_scores.append(rl_f1)
         rl_recall_scores.append(rl_recall)
         rl_precision_scores.append(rl_precision)
@@ -211,7 +220,7 @@ def process_all_queries(final_data, completeness_threshold, topk, return_avg_sco
         cos_sim_recall_scores.append(cos_sim_recall)
         cos_sim_precision_scores.append(cos_sim_precision)
         cos_sim_fpr_scores.append(cos_sim_fpr)
-        
+
         # Create filtered item
         filtered_item = {
             "page_id": item['page_id'],
@@ -224,9 +233,9 @@ def process_all_queries(final_data, completeness_threshold, topk, return_avg_sco
             "relevant_paragraph_origin": relevant_paragraph_origin_filtered,
             "chunk_relevant_portion": chunk_relevant_portion_filtered
         }
-        
+
         filtered_results.append(filtered_item)
-    
+
     # Calculate Averages for RL
     rl_f1_avg = sum(rl_scores) / len(rl_scores)
     rl_rec_avg = sum(rl_recall_scores) / len(rl_recall_scores)
@@ -242,36 +251,36 @@ def process_all_queries(final_data, completeness_threshold, topk, return_avg_sco
     if return_avg_scores:
         return rl_f1_avg, rl_rec_avg, rl_precision_avg, cs_f1_avg, cs_rec_avg, cs_precision_avg
 
-    print(f"\nProcessing Complete!")
-    print(f"Total queries: {len(final_data)}")
-    print(f"Queries retained: {len(filtered_results)}")
-    print(f"Queries dropped: {len(final_data) - len(filtered_results)}")
+    logger.info("Processing Complete!")
+    logger.info(f"Total queries: {len(final_data)}")
+    logger.info(f"Queries retained: {len(filtered_results)}")
+    logger.info(f"Queries dropped: {len(final_data) - len(filtered_results)}")
 
     # RL Metrics
-    print(f"\n--- RL Model Metrics ---")
-    print(f"Average RL F1 Score:      {rl_f1_avg:.4f}")
-    print(f"Average RL Recall (TPR):  {rl_rec_avg:.4f}")
-    print(f"Average RL Precision:     {rl_precision_avg:.4f}")
-    print(f"Average RL FPR:           {rl_fpr_avg:.4f}")
+    logger.info("--- RL Model Metrics ---")
+    logger.info(f"Average RL F1 Score:      {rl_f1_avg:.4f}")
+    logger.info(f"Average RL Recall (TPR):  {rl_rec_avg:.4f}")
+    logger.info(f"Average RL Precision:     {rl_precision_avg:.4f}")
+    logger.info(f"Average RL FPR:           {rl_fpr_avg:.4f}")
 
     # Cos-Sim Metrics
-    print(f"\n--- Cos-Sim Metrics ---")
-    print(f"Average CS F1 Score:     {cs_f1_avg:.4f}")
-    print(f"Average CS Recall (TPR): {cs_rec_avg:.4f}")
-    print(f"Average CS Precision:    {cs_precision_avg:.4f}")
-    print(f"Average CS FPR:          {cs_fpr_avg:.4f}")
+    logger.info("--- Cos-Sim Metrics ---")
+    logger.info(f"Average CS F1 Score:     {cs_f1_avg:.4f}")
+    logger.info(f"Average CS Recall (TPR): {cs_rec_avg:.4f}")
+    logger.info(f"Average CS Precision:    {cs_precision_avg:.4f}")
+    logger.info(f"Average CS FPR:          {cs_fpr_avg:.4f}")
 
     # Variation (using F1 as the primary comparison)
     variation = ((rl_f1_avg - cs_f1_avg) / cs_f1_avg) * 100
-    print(f"\nF1 Score Variation: {(rl_f1_avg - cs_f1_avg):.4f}, {variation:.4f}%")
+    logger.info(f"F1 Score Variation: {(rl_f1_avg - cs_f1_avg):.4f}, {variation:.4f}%")
 
-    print(f"\n--- RL Model Confusion Matrix (Aggregated) ---")
-    print(f"  TP: {rl_cm['TP']:>6}    FP: {rl_cm['FP']:>6}")
-    print(f"  FN: {rl_cm['FN']:>6}    TN: {rl_cm['TN']:>6}")
+    logger.info("--- RL Model Confusion Matrix (Aggregated) ---")
+    logger.info(f"  TP: {rl_cm['TP']:>6}    FP: {rl_cm['FP']:>6}")
+    logger.info(f"  FN: {rl_cm['FN']:>6}    TN: {rl_cm['TN']:>6}")
 
-    print(f"\n--- Cos-Sim Confusion Matrix (Aggregated) ---")
-    print(f"  TP: {cs_cm['TP']:>6}    FP: {cs_cm['FP']:>6}")
-    print(f"  FN: {cs_cm['FN']:>6}    TN: {cs_cm['TN']:>6}")
+    logger.info("--- Cos-Sim Confusion Matrix (Aggregated) ---")
+    logger.info(f"  TP: {cs_cm['TP']:>6}    FP: {cs_cm['FP']:>6}")
+    logger.info(f"  FN: {cs_cm['FN']:>6}    TN: {cs_cm['TN']:>6}")
 
     return filtered_results
 
@@ -322,27 +331,33 @@ def plot_relevance_coverage(thresholds, final_data):
     plt.tight_layout()
     plt.savefig("recall_over_threshold.png", dpi=150, bbox_inches="tight")
     plt.show()
-    print("Saved → recall_over_threshold.png")
+    logger.info("Saved: recall_over_threshold.png")
 
-def analyze():
+def analyze(cfg=None):
+    if cfg is None:
+        cfg = get_config()
+
+    paths = _get_paths(cfg)
+    analysis_dir = cfg.data.analysis_dir
+
     # Merge data
-    final_data = merge_json_data()
-    
+    final_data = merge_json_data(paths)
+
     # Save merged data to file
-    os.makedirs(os.path.dirname(OUTPUT_MERGED), exist_ok=True)
-    with open(OUTPUT_MERGED, 'w') as f:
+    os.makedirs(os.path.dirname(paths['output_merged']), exist_ok=True)
+    with open(paths['output_merged'], 'w') as f:
         json.dump(final_data, f, indent=4)
-    print(f"Merged data saved to {OUTPUT_MERGED}")
-    
+    logger.info(f"Merged data saved to {paths['output_merged']}")
+
     # Calculate and print metrics
     metrics = calculate_metrics(final_data)
-    print(f"\n{'='*50}")
-    print(f"Metrics Summary:")
-    print(f"{'='*50}")
-    print(f"Total number of queries: {metrics['query_count']}")
-    print(f"Average RL F1 Score: {metrics['avg_rl_f1_score']:.6f}")
-    print(f"Average Cosine Similarity F1 Score: {metrics['avg_cos_sim_f1_score']:.6f}")
-    print(f"{'='*50}")
+    logger.info(f"{'='*50}")
+    logger.info("Metrics Summary:")
+    logger.info(f"{'='*50}")
+    logger.info(f"Total number of queries: {metrics['query_count']}")
+    logger.info(f"Average RL F1 Score: {metrics['avg_rl_f1_score']:.6f}")
+    logger.info(f"Average Cosine Similarity F1 Score: {metrics['avg_cos_sim_f1_score']:.6f}")
+    logger.info(f"{'='*50}")
 
     completeness_threshold = 1.1 # 0.8 means chunks with more than 80% relevant are removed
 
@@ -350,7 +365,7 @@ def analyze():
 
     filtered_results = process_all_queries(final_data, 1, topk = 100, return_avg_scores=True)
 
-    with open('data_5_analysis/filtered_results.json', 'w') as f:
+    with open(f'{analysis_dir}/filtered_results.json', 'w') as f:
         json.dump(filtered_results, f, indent=2)
 
     thresholds = np.arange(1, 0, -0.1)

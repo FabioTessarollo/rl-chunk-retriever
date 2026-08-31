@@ -1,7 +1,5 @@
-import csv
 import urllib.parse
 from typing import *
-
 
 
 def encode_section_path(page_id, section_path):
