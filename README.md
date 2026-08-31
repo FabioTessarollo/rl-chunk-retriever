@@ -1,6 +1,13 @@
 # RL Chunks Retriever
 
-A reinforcement learning system for document chunk retrieval, evaluated on the [TREC CAR](http://trec-car.cs.unh.edu/) benchmark. An RL agent (Dueling DQN) learns to select relevant text chunks from a cosine-similarity-ranked candidate list, outperforming a pure cosine similarity baseline.
+In Retrieval-Augmented Generation (RAG) systems, documents are typically divided into fixed-size chunks, which ignore the semantic structure of text. This causes fragmentation of information, complicating the retrieval of chunks that capture only a small portion of the relevant passage.
+Strategies such as hierarchical, overlapping or semantic chunking are the prevailing approaches, but they may introduce noise, increase the number of tokens to process, or significantly raise computational costs.
+
+As an alternative, we propose a Deep Reinforcement Learning model that sequentially navigates a similarity-based rank of fixed-size chunks and dynamically explores relationships between adjacent chunks. The model operates on top of pre-trained, frozen text embeddings, whose semantic representations are processed to enable a refined selection of chunks, improving upon a baseline solely relying on similarity scores.
+
+To evaluate the proposed retrieval strategy, we construct a new benchmark derived from the TREC-CAR dataset and compare our model against a cosine similarity threshold baseline using the same frozen embeddings. Experimental results show a 12.8% improvement in F1 score and a 11\% increase in recall, without degrading precision.
+
+These results point toward reinforcement learning as a viable enhancement to the standard retrieval stage in RAG pipelines, requiring no additional text to be embedded beyond the fixed-size chunks, and no Large Language Model (LLM) to be fine-tuned.
 
 ## Architecture
 
